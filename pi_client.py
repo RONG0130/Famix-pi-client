@@ -14,7 +14,7 @@ DEVICE = "plughw:1,0"                # `arecord -l` 列出的录音设备
 
 # ─── VAD 等待喚醒 ───────────────────────────────────────────────────────
 def listen_for_wake(
-    fs: int = 16000,
+    fs: int = 44100,
     frame_ms: int = 30,
     aggressiveness: int = 1,
     silence_limit: float = 1.0,
