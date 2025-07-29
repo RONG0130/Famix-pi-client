@@ -9,7 +9,7 @@ import numpy as np
 from playsound import playsound
 
 # █ 配置 █
-SERVER = "http://192.168.0.17ㄎ:5000"  # 要调用的 PC 端 Flask Server
+SERVER = "http://192.168.0.17:5000"  # 要调用的 PC 端 Flask Server
 DEVICE = "plughw:1,0"                # `arecord -l` 列出的录音设备
 
 # ─── VAD 等待喚醒 ───────────────────────────────────────────────────────
