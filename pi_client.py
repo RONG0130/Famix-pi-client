@@ -14,7 +14,7 @@ DEVICE = "plughw:1,0"                # `arecord -l` 列出的录音设备
 
 # ─── VAD 等待喚醒 ───────────────────────────────────────────────────────
 def listen_for_wake(
-    fs: int = 44100,
+    fs: int = 48000,
     frame_ms: int = 30,
     aggressiveness: int = 1,
     silence_limit: float = 1.0,
@@ -56,7 +56,7 @@ def listen_for_wake(
 def record_wav(duration: int = 3, wav: str = "/tmp/tmp.wav") -> str:
     cmd = [
         "arecord", "-D", DEVICE,
-        "-f", "S16_LE", "-r", "44100", "-c", "1", "-d", str(duration),
+        "-f", "S16_LE", "-r", "48000", "-c", "1", "-d", str(duration),
         wav
     ]
     subprocess.run(cmd, check=True)
