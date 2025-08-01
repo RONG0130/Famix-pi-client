@@ -1,128 +1,95 @@
-#!/usr/bin/env python3
-import os
-import subprocess
-import time
+# Famix-pi-client/pi_client.py
 
-import numpy as np
+import os
+import time
+import subprocess
 import requests
-import sounddevice as sd
-import webrtcvad
+
+from pocketsphinx import LiveSpeech
 from playsound import playsound
 
-# ── Config ─────────────────────────────────────────────────
-SERVER = "http://192.168.0.17:5000"   # 改成你的 PC IP
-DEVICE = "plughw:1,0"                 # 从 arecord -l 查到
-FS = 48000                            # VAD 采样率
-FRAME_MS = 30                         # VAD 帧长 30ms
-VAD_AGGR = 1                          # 勇气等级 0~3
-SILENCE_THRESHOLD = 500               # PCM 振幅阈值（可调）
+# ========== 使用者可調整參數 ==============
+SERVER = "http://192.168.0.17:5000"     # PC 伺服器 API 位址
+DEVICE = "plughw:1,0"                   # 依 arecord -l 結果設置
+REC_SECONDS = 6                         # 錄音長度（秒）
+FS = 16000                              # 錄音採樣率（建議 16k 給 Whisper）
+WAKEWORD = "hi famix"
+# ==========================================
 
-# ── 待机阶段录短音，只有“有声音”才返回 ───────────────────
-def silent_record(max_duration=3.0, silence_limit=1.0):
-    vad = webrtcvad.Vad(VAD_AGGR)
-    frame_len = int(FS * FRAME_MS / 1000)
-    max_frames = int(max_duration * 1000 / FRAME_MS)
-    silence_frames = int(silence_limit * 1000 / FRAME_MS)
+def wait_for_wake_word():
+    print(f"Famix Pi 已啟動，請說出喚醒詞：{WAKEWORD}")
+    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20, samplerate=FS):
+        print("✅ 偵測到喚醒詞，準備開始錄音！")
+        break
 
-    stream = sd.RawInputStream(
-        samplerate=FS, channels=1, dtype="int16",
-        blocksize=frame_len, device=DEVICE
-    )
-    stream.start()
-
-    voiced = []
-    silent_count = 0
-    frames = 0
-    try:
-        while frames < max_frames and silent_count < silence_frames:
-            data, _ = stream.read(frame_len)
-            frames += 1
-            if vad.is_speech(data, FS):
-                voiced.append(data)
-                silent_count = 0
-            else:
-                if voiced:
-                    silent_count += 1
-    finally:
-        stream.stop()
-        stream.close()
-
-    return b"".join(voiced)
-
-
-# ── 用 VAD 来“唤醒”──检测到任何语音就返回──
-def listen_for_wake():
-    print("Famix Pi 启动，进入待机喚醒中…")
-    while True:
-        pcm = silent_record()
-        # 如果确实录到了一点语音，就唤醒
-        if pcm and np.frombuffer(pcm, np.int16).max() > SILENCE_THRESHOLD:
-            print("[Wake] 检测到声音，进入对话流程")
-            return
-
-
-# ── 唤醒后录对话 WAV ───────────────────────────────────────
-def record_dialog(duration=5, wav="/tmp/tmp.wav"):
-    print("开始录音…")
+def record_audio(wav_path="/tmp/famix_input.wav"):
+    print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話...")
     cmd = [
-        "arecord", "-D", DEVICE,
-        "-f", "S16_LE", "-r", "48000",
-        "-c", "1", "-d", str(duration),
-        wav
+        "arecord",
+        "-D", DEVICE,
+        "-f", "S16_LE",
+        "-r", str(FS),
+        "-c", "1",
+        "-d", str(REC_SECONDS),
+        wav_path
     ]
     subprocess.run(cmd, check=True)
-    return wav
+    return wav_path
 
-
-def wav2mp3(wav, mp3="/tmp/tmp.mp3"):
+def wav_to_mp3(wav_path, mp3_path="/tmp/famix_input.mp3"):
     cmd = [
-        "ffmpeg", "-y", "-i", wav,
+        "ffmpeg", "-y", "-i", wav_path,
         "-codec:a", "libmp3lame", "-qscale:a", "5",
-        mp3
+        mp3_path
     ]
-    subprocess.run(cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=True
-    )
-    return mp3
-
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    return mp3_path
 
 def send_audio(mp3_path):
     url = f"{SERVER}/api/audio"
-    print(f"POST → {url}")
+    print(f"⬆️  上傳 MP3 至伺服器 {url}")
     with open(mp3_path, "rb") as f:
         files = {"file": ("voice.mp3", f, "audio/mpeg")}
         resp = requests.post(url, files=files, timeout=30)
     resp.raise_for_status()
     return resp.content
 
+def play_audio(mp3_bytes, out_path="/tmp/famix_reply.mp3"):
+    with open(out_path, "wb") as fo:
+        fo.write(mp3_bytes)
+    print("🔊 播放伺服器回應 ...")
+    playsound(out_path)
+    # 自動清理
+    os.remove(out_path)
 
-# ── 主循环 ─────────────────────────────────────────────────
-if __name__ == "__main__":
+def main():
     try:
         while True:
-            # 1️⃣ wait wake
-            listen_for_wake()
+            # 1️⃣ 等待喚醒詞
+            wait_for_wake_word()
 
-            # 2️⃣ record dialog
-            wav = record_dialog(duration=5)
-            mp3 = wav2mp3(wav)
+            # 2️⃣ 錄音
+            wav = record_audio()
 
-            # 3️⃣ upload & get reply
+            # 3️⃣ wav 轉 mp3
+            mp3 = wav_to_mp3(wav)
+
+            # 4️⃣ 上傳 mp3 並取得回應
             reply = send_audio(mp3)
-            out = "/tmp/famix_reply.mp3"
-            with open(out, "wb") as fo:
-                fo.write(reply)
 
-            # 4️⃣ play
-            print("Playing reply…")
-            playsound(out)
+            # 5️⃣ 播放回應
+            play_audio(reply)
 
-            # 5️⃣ clean up
-            for fn in (wav, mp3, out):
+            # 6️⃣ 清理檔案
+            for fn in (wav, mp3):
                 try: os.remove(fn)
                 except: pass
 
+            print("=== 已回到待機 ===\n")
+            time.sleep(1)
+
     except KeyboardInterrupt:
-        print("Bye!")
+        print("\n👋 Bye Famix Pi!")
+
+if __name__ == "__main__":
+    main()
