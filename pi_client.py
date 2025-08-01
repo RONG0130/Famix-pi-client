@@ -12,13 +12,13 @@ from playsound import playsound
 SERVER = "http://192.168.0.17:5000"     # PC 伺服器 API 位址
 DEVICE = "plughw:1,0"                   # 依 arecord -l 結果設置
 REC_SECONDS = 6                         # 錄音長度（秒）
-FS = 8000                            # 錄音採樣率（建議 16k 給 Whisper）
+FS = 44100                            # 錄音採樣率（建議 16k 給 Whisper）
 WAKEWORD = "hi famix"
 # ==========================================
 
 def wait_for_wake_word():
     print(f"Famix Pi 已啟動，請說出喚醒詞：{WAKEWORD}")
-    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20, samplerate=FS):
+    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20, device="plughw:1,0"):
         print("✅ 偵測到喚醒詞，準備開始錄音！")
         break
 
