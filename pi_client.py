@@ -12,7 +12,7 @@ from playsound import playsound
 SERVER = "http://192.168.0.17:5000"     # PC 伺服器 API 位址
 DEVICE = "plughw:1,0"                   # 依 arecord -l 結果設置
 REC_SECONDS = 6                         # 錄音長度（秒）
-FS = 16000                              # 錄音採樣率（建議 16k 給 Whisper）
+FS = 48000                             # 錄音採樣率（建議 16k 給 Whisper）
 WAKEWORD = "hi famix"
 # ==========================================
 
