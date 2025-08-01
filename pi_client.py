@@ -18,7 +18,7 @@ WAKEWORD = "hi famix"
 
 def wait_for_wake_word():
     print(f"Famix Pi 已啟動，請說出喚醒詞：{WAKEWORD}")
-    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20, device="plughw:1,0"):
+    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20):
         print("✅ 偵測到喚醒詞，準備開始錄音！")
         break
 
