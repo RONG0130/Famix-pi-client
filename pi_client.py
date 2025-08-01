@@ -5,7 +5,7 @@ import time
 import subprocess
 import requests
 
-from pocketsphinx import LiveSpeech
+from pocketsphinx import AudioFile, get_model_path
 from playsound import playsound
 
 # ========== 使用者可調整參數 ==============
@@ -18,9 +18,41 @@ WAKEWORD = "hi famix"
 
 def wait_for_wake_word():
     print(f"Famix Pi 已啟動，請說出喚醒詞：{WAKEWORD}")
-    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20):
-        print("✅ 偵測到喚醒詞，準備開始錄音！")
-        break
+    while True:
+        # 1. 錄音 2 秒
+        wav_path = "/tmp/tmp_listen.wav"
+        cmd = [
+            "arecord",
+            "-D", DEVICE,
+            "-f", "S16_LE",
+            "-r", str(FS),
+            "-c", "1",
+            "-d", "2",
+            wav_path
+        ]
+        subprocess.run(cmd, check=True)
+
+        # 2. 用 pocketsphinx 辨識
+        model_path = get_model_path()
+        config = {
+            'audio_file': wav_path,
+            'hmm': os.path.join(model_path, 'en-us'),
+            'lm': os.path.join(model_path, 'en-us.lm.bin'),
+            'dict': os.path.join(model_path, 'cmudict-en-us.dict')
+        }
+        audio = AudioFile(**config)
+        detected = False
+        for phrase in audio:
+            print(f"[DEBUG] phrase: {phrase}")
+            if WAKEWORD in str(phrase).lower():
+                detected = True
+                break
+
+        if detected:
+            print("✅ 偵測到喚醒詞，準備開始錄音！")
+            os.remove(wav_path)
+            break
+        os.remove(wav_path)
 
 def record_audio(wav_path="/tmp/famix_input.wav"):
     print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話...")
