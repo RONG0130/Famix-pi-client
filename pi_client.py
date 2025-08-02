@@ -18,7 +18,7 @@ WAKEWORD = "hi famix"
 def wait_for_wake_word():
     print(f"Famix Pi 已啟動，請對麥克風說出喚醒詞：{WAKEWORD}")
     # 嘗試僅指定 device，不設 samplerate（部分設備一定要設，請視情況加）
-    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20,samplerate=16000,device=0):
+    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20,samplerate=16000,device="sysdefault:CARD=GM303"):
         print("✅ 偵測到喚醒詞，準備開始錄音！")
         break
 
