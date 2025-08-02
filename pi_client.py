@@ -32,14 +32,20 @@ def wait_for_wake_word():
             'lm': os.path.join(MODEL_PATH, 'en-us.lm.bin'),
             'dict': os.path.join(MODEL_PATH, 'cmudict-en-us.dict')
         }
-        audio = AudioFile(**config)
         detected = False
-        for phrase in audio:
-            if WAKEWORD in str(phrase).lower():
-                detected = True
-                break
-
-        os.remove(wav_path)
+        try:
+            audio = AudioFile(**config)
+            for phrase in audio:
+                if WAKEWORD in str(phrase).lower():
+                    detected = True
+                    break
+        except StopIteration:
+            print("[INFO] pocketsphinx StopIteration, 重新監聽 ...")
+            # 可視情況再 sleep 一下
+            time.sleep(1)
+        finally:
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
 
         if detected:
             print("✅ 偵測到喚醒詞，準備開始錄音！")
