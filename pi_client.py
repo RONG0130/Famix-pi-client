@@ -33,7 +33,7 @@ def wait_for_wake_word():
         subprocess.run(cmd, check=True)
 
         # 2. 用 pocketsphinx 辨識
-        model_path = get_model_path()
+        model_path = "/home/pi/Famix-pi-client/model/en-us"
         config = {
             'audio_file': wav_path,
             'hmm': os.path.join(model_path, 'en-us'),
