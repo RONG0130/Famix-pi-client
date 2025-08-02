@@ -11,17 +11,20 @@ DEVICE = "plughw:1,0"
 REC_SECONDS = 6
 FS = 44100
 WAKEWORD = "hi famix"
-MODEL_PATH = "/home/pi/Famix-pi-client/model/en-us"  # 請根據實際模型資料夾改成你的絕對路徑
+MODEL_PATH = "/home/pi/Famix-pi-client/model/en-us"
+
+# 可以自訂喚醒詞關鍵字（可根據 debug print 內容持續優化）
+KEYWORDS = ["hi", "famix", "for", "er"]
 
 def wait_for_wake_word():
     print(f"Famix Pi 已啟動，請說出喚醒詞：{WAKEWORD}")
     wav_path = "/tmp/tmp_listen.wav"
     while True:
-        # 1. 錄音 2 秒
+        # 1. 錄音 3 秒
         cmd = [
             "arecord", "-D", DEVICE,
             "-f", "S16_LE", "-r", str(FS),
-            "-c", "1", "-d", "2", wav_path
+            "-c", "1", "-d", "3", wav_path
         ]
         subprocess.run(cmd, check=True)
 
@@ -36,27 +39,27 @@ def wait_for_wake_word():
         try:
             audio = AudioFile(**config)
             for phrase in audio:
-                print(f"[DEBUG] phrase: {phrase}")
-                if WAKEWORD in str(phrase).lower():
+                phrase_str = str(phrase).lower().strip()
+                print(f"[DEBUG] phrase: {phrase_str}")
+                # 只要 phrase 包含其中一個關鍵字就觸發
+                if any(k in phrase_str for k in KEYWORDS):
                     detected = True
                     break
         except StopIteration:
             print("[INFO] pocketsphinx StopIteration, 重新監聽 ...")
-            # 可視情況再 sleep 一下
             time.sleep(1)
         finally:
             if os.path.exists(wav_path):
                 os.remove(wav_path)
 
         if detected:
-            print("✅ 偵測到喚醒詞，準備開始錄音！")
+            print("✅ 偵測到喚醒詞（符合關鍵字）！準備開始錄音 ...")
             break
 
-        # 降低記憶體佔用，每次 sleep 2 秒
-        time.sleep(2)
+        time.sleep(2)  # 降低 CPU 佔用
 
 def record_audio(wav_path="/tmp/famix_input.wav"):
-    print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話...")
+    print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話 ...")
     cmd = [
         "arecord", "-D", DEVICE,
         "-f", "S16_LE", "-r", str(FS),
@@ -101,7 +104,7 @@ def main():
                 try: os.remove(fn)
                 except: pass
             print("=== 已回到待機 ===\n")
-            time.sleep(1)  # 讓主循環不要狂刷，額外休息一秒
+            time.sleep(1)
 
     except KeyboardInterrupt:
         print("\n👋 Bye Famix Pi!")
