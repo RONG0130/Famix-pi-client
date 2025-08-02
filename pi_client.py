@@ -1,37 +1,59 @@
-# Famix-pi-client/pi_client.py
-
 import os
 import time
 import subprocess
 import requests
-
-from pocketsphinx import LiveSpeech
+from pocketsphinx import AudioFile
 from playsound import playsound
 
-# 使用者設定
-SERVER = "http://192.168.0.17:5000"     # PC 伺服器 API
-DEVICE = "plughw:1,0"                   # 根據 arecord -l 結果
-REC_SECONDS = 6                         # 錄音長度
-FS = 44100                              # 實際錄音用44100, 但LiveSpeech不指定samplerate
+# === 使用者設定 ===
+SERVER = "http://192.168.0.17:5000"
+DEVICE = "plughw:1,0"
+REC_SECONDS = 6
+FS = 44100
 WAKEWORD = "hi famix"
+MODEL_PATH = "/home/pi/Famix-pi-client/model/en-us"  # 請根據實際模型資料夾改成你的絕對路徑
 
 def wait_for_wake_word():
-    print(f"Famix Pi 已啟動，請對麥克風說出喚醒詞：{WAKEWORD}")
-    # 嘗試僅指定 device，不設 samplerate（部分設備一定要設，請視情況加）
-    for phrase in LiveSpeech(keyphrase=WAKEWORD, kws_threshold=1e-20,samplerate=16000,device="default:CARD=GM303"):
-        print("✅ 偵測到喚醒詞，準備開始錄音！")
-        break
+    print(f"Famix Pi 已啟動，請說出喚醒詞：{WAKEWORD}")
+    wav_path = "/tmp/tmp_listen.wav"
+    while True:
+        # 1. 錄音 2 秒
+        cmd = [
+            "arecord", "-D", DEVICE,
+            "-f", "S16_LE", "-r", str(FS),
+            "-c", "1", "-d", "2", wav_path
+        ]
+        subprocess.run(cmd, check=True)
+
+        # 2. Pocketsphinx 辨識
+        config = {
+            'audio_file': wav_path,
+            'hmm': MODEL_PATH,
+            'lm': os.path.join(MODEL_PATH, 'en-us.lm.bin'),
+            'dict': os.path.join(MODEL_PATH, 'cmudict-en-us.dict')
+        }
+        audio = AudioFile(**config)
+        detected = False
+        for phrase in audio:
+            if WAKEWORD in str(phrase).lower():
+                detected = True
+                break
+
+        os.remove(wav_path)
+
+        if detected:
+            print("✅ 偵測到喚醒詞，準備開始錄音！")
+            break
+
+        # 降低記憶體佔用，每次 sleep 2 秒
+        time.sleep(2)
 
 def record_audio(wav_path="/tmp/famix_input.wav"):
     print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話...")
     cmd = [
-        "arecord",
-        "-D", DEVICE,
-        "-f", "S16_LE",
-        "-r", str(FS),
-        "-c", "1",
-        "-d", str(REC_SECONDS),
-        wav_path
+        "arecord", "-D", DEVICE,
+        "-f", "S16_LE", "-r", str(FS),
+        "-c", "1", "-d", str(REC_SECONDS), wav_path
     ]
     subprocess.run(cmd, check=True)
     return wav_path
@@ -39,8 +61,7 @@ def record_audio(wav_path="/tmp/famix_input.wav"):
 def wav_to_mp3(wav_path, mp3_path="/tmp/famix_input.mp3"):
     cmd = [
         "ffmpeg", "-y", "-i", wav_path,
-        "-codec:a", "libmp3lame", "-qscale:a", "5",
-        mp3_path
+        "-codec:a", "libmp3lame", "-qscale:a", "5", mp3_path
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     return mp3_path
@@ -64,28 +85,16 @@ def play_audio(mp3_bytes, out_path="/tmp/famix_reply.mp3"):
 def main():
     try:
         while True:
-            # 1️⃣ 等待喚醒詞
             wait_for_wake_word()
-
-            # 2️⃣ 錄音
             wav = record_audio()
-
-            # 3️⃣ wav 轉 mp3
             mp3 = wav_to_mp3(wav)
-
-            # 4️⃣ 上傳 mp3 並取得回應
             reply = send_audio(mp3)
-
-            # 5️⃣ 播放回應
             play_audio(reply)
-
-            # 6️⃣ 清理檔案
             for fn in (wav, mp3):
                 try: os.remove(fn)
                 except: pass
-
             print("=== 已回到待機 ===\n")
-            time.sleep(1)
+            time.sleep(1)  # 讓主循環不要狂刷，額外休息一秒
 
     except KeyboardInterrupt:
         print("\n👋 Bye Famix Pi!")
