@@ -36,6 +36,7 @@ def wait_for_wake_word():
         try:
             audio = AudioFile(**config)
             for phrase in audio:
+                print(f"[DEBUG] phrase: {phrase}")
                 if WAKEWORD in str(phrase).lower():
                     detected = True
                     break
