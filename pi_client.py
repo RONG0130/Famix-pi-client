@@ -7,16 +7,12 @@ import requests
 from playsound import playsound
 import subprocess
 
-pa = pyaudio.PyAudio()
-for i in range(pa.get_device_count()):
-    info = pa.get_device_info_by_index(i)
-    print(f"Index: {i}, Name: {info['name']}, Rate: {info['defaultSampleRate']}, Max Input Channels: {info['maxInputChannels']}")
-
 # --- 基本參數 ---
 SERVER = "http://192.168.0.17:5000"       # 你的伺服器 API
 WAKEWORD_PATH = "/home/pi/Famix-pi-client/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"   # Porcupine 喚醒詞檔案
 REC_SECONDS = 6
 DEVICE = "plughw:1,0"                     # 根據 arecord -l 結果設置
+DEVICE_INDEX = 2
 FS = 16000                                # 建議與 Porcupine 相同或44100
 ACCESS_KEY = "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw=="
 
@@ -28,11 +24,12 @@ def wait_for_wake_word():
     )
     pa = pyaudio.PyAudio()
     audio_stream = pa.open(
-        rate=porcupine.sample_rate,
-        channels=1,
-        format=pyaudio.paInt16,
-        input=True,
-        frames_per_buffer=porcupine.frame_length
+    rate=porcupine.sample_rate,
+    channels=1,
+    format=pyaudio.paInt16,
+    input=True,
+    frames_per_buffer=porcupine.frame_length,  # <- 漏逗號
+    input_device_index=DEVICE_INDEX
     )
     try:
         while True:
@@ -51,7 +48,7 @@ def record_audio(wav_path="/tmp/famix_input.wav"):
     print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話 ...")
     cmd = [
         "arecord", "-D", DEVICE,
-        "-f", "S16_LE", "-r", str(porcupine.sample_rate),
+        "-f", "S16_LE", "-r", str(FS),
         "-c", "1", "-d", str(REC_SECONDS), wav_path
     ]
     subprocess.run(cmd, check=True)
