@@ -47,7 +47,7 @@ def record_audio(wav_path="/tmp/famix_input.wav"):
     # 直接用 arecord，rate 請用 16000，保證跟 Porcupine 一致
     cmd = [
         "arecord", "-D", DEVICE,
-        "-f", "S16_LE", "-r", "16000",
+        "-f", "S16_LE", "-r", "44100",
         "-c", "1", "-d", str(REC_SECONDS), wav_path
     ]
     subprocess.run(cmd, check=True)
