@@ -1,62 +1,42 @@
 import os
 import time
-import subprocess
+import numpy as np
+import pvporcupine
+import pyaudio
 import requests
-from pocketsphinx import AudioFile
 from playsound import playsound
+import subprocess
 
-# === 使用者設定 ===
-SERVER = "http://192.168.0.17:5000"
-DEVICE = "plughw:1,0"
+# --- 基本參數 ---
+SERVER = "http://192.168.0.17:5000"       # 你的伺服器 API
+WAKEWORD_PATH = "/home/pi/Famix-pi-client/hi-fe-mix_raspberry-pi_v3_0_0.ppn"   # Porcupine 喚醒詞檔案
 REC_SECONDS = 6
-FS = 44100
-WAKEWORD = "hi famix"
-MODEL_PATH = "/home/pi/Famix-pi-client/model/en-us"
-
-# 可以自訂喚醒詞關鍵字（可根據 debug print 內容持續優化）
-KEYWORDS = ["hi", "famix", "for", "er"]
+DEVICE = "plughw:1,0"                     # 根據 arecord -l 結果設置
+FS = 16000                                # 建議與 Porcupine 相同或44100
 
 def wait_for_wake_word():
-    print(f"Famix Pi 已啟動，請說出喚醒詞：{WAKEWORD}")
-    wav_path = "/tmp/tmp_listen.wav"
-    while True:
-        # 1. 錄音 3 秒
-        cmd = [
-            "arecord", "-D", DEVICE,
-            "-f", "S16_LE", "-r", str(FS),
-            "-c", "1", "-d", "3", wav_path
-        ]
-        subprocess.run(cmd, check=True)
-
-        # 2. Pocketsphinx 辨識
-        config = {
-            'audio_file': wav_path,
-            'hmm': MODEL_PATH,
-            'lm': os.path.join(MODEL_PATH, 'en-us.lm.bin'),
-            'dict': os.path.join(MODEL_PATH, 'cmudict-en-us.dict')
-        }
-        detected = False
-        try:
-            audio = AudioFile(**config)
-            for phrase in audio:
-                phrase_str = str(phrase).lower().strip()
-                print(f"[DEBUG] phrase: {phrase_str}")
-                # 只要 phrase 包含其中一個關鍵字就觸發
-                if any(k in phrase_str for k in KEYWORDS):
-                    detected = True
-                    break
-        except StopIteration:
-            print("[INFO] pocketsphinx StopIteration, 重新監聽 ...")
-            time.sleep(1)
-        finally:
-            if os.path.exists(wav_path):
-                os.remove(wav_path)
-
-        if detected:
-            print("✅ 偵測到喚醒詞（符合關鍵字）！準備開始錄音 ...")
-            break
-
-        time.sleep(2)  # 降低 CPU 佔用
+    print(f"Famix Pi 已啟動，請說出喚醒詞 ...")
+    porcupine = pvporcupine.create(keyword_paths=[WAKEWORD_PATH])
+    pa = pyaudio.PyAudio()
+    audio_stream = pa.open(
+        rate=porcupine.sample_rate,
+        channels=1,
+        format=pyaudio.paInt16,
+        input=True,
+        frames_per_buffer=porcupine.frame_length
+    )
+    try:
+        while True:
+            pcm = audio_stream.read(porcupine.frame_length, exception_on_overflow=False)
+            pcm = np.frombuffer(pcm, dtype=np.int16)
+            result = porcupine.process(pcm)
+            if result >= 0:
+                print("✅ 偵測到喚醒詞，準備開始錄音！")
+                break
+    finally:
+        audio_stream.close()
+        pa.terminate()
+        porcupine.delete()
 
 def record_audio(wav_path="/tmp/famix_input.wav"):
     print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話 ...")
@@ -105,7 +85,6 @@ def main():
                 except: pass
             print("=== 已回到待機 ===\n")
             time.sleep(1)
-
     except KeyboardInterrupt:
         print("\n👋 Bye Famix Pi!")
 
