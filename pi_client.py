@@ -13,10 +13,14 @@ WAKEWORD_PATH = "/home/pi/Famix-pi-client/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn" 
 REC_SECONDS = 6
 DEVICE = "plughw:1,0"                     # 根據 arecord -l 結果設置
 FS = 16000                                # 建議與 Porcupine 相同或44100
+ACCESS_KEY = "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw=="
 
 def wait_for_wake_word():
     print(f"Famix Pi 已啟動，請說出喚醒詞 ...")
-    porcupine = pvporcupine.create(keyword_paths=[WAKEWORD_PATH])
+    porcupine = pvporcupine.create(
+    access_key=ACCESS_KEY,
+    keyword_paths=[WAKEWORD_PATH]
+)
     pa = pyaudio.PyAudio()
     audio_stream = pa.open(
         rate=porcupine.sample_rate,
