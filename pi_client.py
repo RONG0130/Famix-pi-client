@@ -7,6 +7,11 @@ import requests
 from playsound import playsound
 import subprocess
 
+pa = pyaudio.PyAudio()
+for i in range(pa.get_device_count()):
+    info = pa.get_device_info_by_index(i)
+    print(f"Index: {i}, Name: {info['name']}, Rate: {info['defaultSampleRate']}, Max Input Channels: {info['maxInputChannels']}")
+
 # --- 基本參數 ---
 SERVER = "http://192.168.0.17:5000"       # 你的伺服器 API
 WAKEWORD_PATH = "/home/pi/Famix-pi-client/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"   # Porcupine 喚醒詞檔案
