@@ -9,7 +9,7 @@ import subprocess
 
 # --- 基本參數 ---
 SERVER = "http://192.168.0.17:5000"       # 你的伺服器 API
-WAKEWORD_PATH = "/home/pi/Famix-pi-client/hi-fe-mix_raspberry-pi_v3_0_0.ppn"   # Porcupine 喚醒詞檔案
+WAKEWORD_PATH = "/home/pi/Famix-pi-client/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"   # Porcupine 喚醒詞檔案
 REC_SECONDS = 6
 DEVICE = "plughw:1,0"                     # 根據 arecord -l 結果設置
 FS = 16000                                # 建議與 Porcupine 相同或44100
