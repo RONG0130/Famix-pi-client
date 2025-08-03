@@ -12,7 +12,7 @@ SERVER = "http://192.168.0.17:5000"
 WAKEWORD_PATH = "/home/pi/Famix-pi-client/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"  # 你的ppn檔案
 REC_SECONDS = 6
 DEVICE = "plughw:1,0"  # 你的麥克風 arecord 名稱
-ACCESS_KEY = "你的Porcupine Access Key"  # 改成你的key
+ACCESS_KEY = "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw=="  # 改成你的key
 
 def wait_for_wake_word(device_index=2):
     print(f"Famix Pi 已啟動，請說出喚醒詞 ...")
