@@ -20,7 +20,7 @@ def wait_for_wake_word():
     porcupine = pvporcupine.create(
     access_key=ACCESS_KEY,
     keyword_paths=[WAKEWORD_PATH]
-)
+    )
     pa = pyaudio.PyAudio()
     audio_stream = pa.open(
         rate=porcupine.sample_rate,
@@ -46,7 +46,7 @@ def record_audio(wav_path="/tmp/famix_input.wav"):
     print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話 ...")
     cmd = [
         "arecord", "-D", DEVICE,
-        "-f", "S16_LE", "-r", str(FS),
+        "-f", "S16_LE", "-r", str(porcupine.sample_rate),
         "-c", "1", "-d", str(REC_SECONDS), wav_path
     ]
     subprocess.run(cmd, check=True)
