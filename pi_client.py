@@ -1,11 +1,14 @@
+# -*- coding: utf-8 -*-
 import pvporcupine
-from pvrecorder import PvRecorder  # pip install pvrecorder
+from pvrecorder import PvRecorder
 import wave
 import time
 import datetime
 import math
+import struct
+import sys
 
-ACCESS_KEY = "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw=="
+ACCESS_KEY = "YOUR_ACCESS_KEY_HERE"
 KEYWORD_PATH = "/home/admin/Porcupine/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"
 
 SENSITIVITY = 0.25
@@ -14,7 +17,26 @@ COOLDOWN_SEC = 2.5
 RECORD_SEC = 3
 CALIBRATE_SEC = 1.0
 RMS_MARGIN = 2.5
-DEVICE_INDEX = -1   # -1 表示預設；用 PvRecorder.get_audio_devices() 列出名稱後自行選擇
+DEVICE_INDEX = 2  # -1=預設輸入裝置；若你知道 index 可改數字
+
+def list_devices_compat():
+    """相容不同版本 pvrecorder 的裝置列舉。"""
+    names = []
+    # 方案1：class 靜態方法（有些版本有）
+    try:
+        names = PvRecorder.get_audio_devices()
+        return names
+    except Exception:
+        pass
+    # 方案2：模組層函式（有些版本只有這個）
+    try:
+        from pvrecorder import get_audio_devices  # type: ignore
+        names = get_audio_devices()
+        return names
+    except Exception:
+        pass
+    # 方案3：取不到就回空清單（讓程式繼續跑）
+    return []
 
 def rms_int16(int_samples):
     s2 = sum(s*s for s in int_samples) / float(len(int_samples))
@@ -24,16 +46,28 @@ def now_str():
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 def main():
-    print("=== 可用輸入裝置 ===")
-    for i, name in enumerate(PvRecorder.get_audio_devices()):
-        print(f"[{i}] {name}")
+    if "YOUR_ACCESS_KEY_HERE" in ACCESS_KEY:
+        print("⚠️ 請先填入 Porcupine ACCESS_KEY。")
+        sys.exit(1)
 
+    # Porcupine 偵測器
     porcupine = pvporcupine.create(
         access_key=ACCESS_KEY,
         keyword_paths=[KEYWORD_PATH],
         sensitivities=[SENSITIVITY],
     )
 
+    # 裝置列舉（相容各版）
+    names = list_devices_compat()
+    if names:
+        print("=== 可用輸入裝置 ===")
+        for i, name in enumerate(names):
+            print(f"[{i}] {name}")
+    else:
+        print("⚠️ 無法由 pvrecorder 取得裝置清單。將使用預設輸入裝置（device_index=-1）。")
+        print("   你也可用 `arecord -l` 取得卡號，再設定 DEVICE_INDEX。")
+
+    # 錄音器
     rec = PvRecorder(device_index=DEVICE_INDEX, frame_length=porcupine.frame_length)
     rec.start()
 
@@ -42,7 +76,7 @@ def main():
         calib_frames = int((porcupine.sample_rate / porcupine.frame_length) * CALIBRATE_SEC)
         rms_vals = []
         for _ in range(max(1, calib_frames)):
-            pcm = rec.read()  # list[int16]
+            pcm = rec.read()  # list[int]
             rms_vals.append(rms_int16(pcm))
         noise_mean = sum(rms_vals) / len(rms_vals)
         noise_var = sum((x - noise_mean) ** 2 for x in rms_vals) / max(1, len(rms_vals) - 1)
@@ -55,17 +89,15 @@ def main():
         last_trigger_ts = 0.0
 
         while True:
-            pcm = rec.read()  # list of int16, 長度=frame_length
-            # 先能量門檻
+            pcm = rec.read()  # list[int16], 長度=frame_length
+
+            # 先做能量門檻（降低底噪誤觸）
             if rms_int16(pcm) < rms_gate:
                 consecutive_hits = 0
                 continue
 
             is_hit = porcupine.process(pcm)
-            if is_hit:
-                consecutive_hits += 1
-            else:
-                consecutive_hits = 0
+            consecutive_hits = consecutive_hits + 1 if is_hit else 0
 
             now_ts = time.time()
             if consecutive_hits >= CONFIRM_FRAMES and (now_ts - last_trigger_ts) >= COOLDOWN_SEC:
@@ -73,26 +105,22 @@ def main():
                 ts_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(f"\n✅ [{ts_str}] 喚醒詞偵測成功！開始錄音 {RECORD_SEC} 秒...")
 
-                frames = [bytes(bytearray(int(x & 0xFF) for x in pcm))]  # 先占位，下面會用 wave 正確寫入
-                # 用 wave 正規寫法
-                audio_file = f"wake_audio_{now_str()}.wav"
-                with wave.open(audio_file, 'wb') as wf:
+                # 收集 RECORD_SEC 秒音訊
+                frames = [pcm]
+                total_more = int(porcupine.sample_rate / porcupine.frame_length * RECORD_SEC) - 1
+                for _ in range(max(0, total_more)):
+                    frames.append(rec.read())
+
+                # 寫成 WAV
+                out = f"wake_audio_{now_str()}.wav"
+                with wave.open(out, 'wb') as wf:
                     wf.setnchannels(1)
                     wf.setsampwidth(2)  # int16
                     wf.setframerate(porcupine.sample_rate)
-                    # 已有第一個 frame -> 重新寫入更正確的 bytes
-                    wf.writeframes(b"")  # 先空寫，下面補足所有 frames
+                    for block in frames:
+                        wf.writeframes(struct.pack("<" + "h"*len(block), *block))
 
-                    # 把剛剛觸發的 frame 也寫入（轉 bytes）
-                    import struct
-                    wf.writeframes(struct.pack("<" + "h"*len(pcm), *pcm))
-
-                    total_more = int(porcupine.sample_rate / porcupine.frame_length * RECORD_SEC) - 1
-                    for _ in range(max(0, total_more)):
-                        pcm2 = rec.read()
-                        wf.writeframes(struct.pack("<" + "h"*len(pcm2), *pcm2))
-
-                print(f"💾 已儲存：{audio_file}")
+                print(f"💾 已儲存：{out}")
                 consecutive_hits = 0
                 time.sleep(COOLDOWN_SEC)
 
@@ -106,4 +134,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
