@@ -1,97 +1,58 @@
-import os
-import time
-import numpy as np
 import pvporcupine
 import pyaudio
-import requests
-from playsound import playsound
-import subprocess
+import wave
+import struct
 
-# --- 基本參數 ---
-SERVER = "http://192.168.0.17:5000"
-WAKEWORD_PATH = "/home/pi/Famix-pi-client/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"  # 你的ppn檔案
-REC_SECONDS = 6
-DEVICE = "plughw:1,0"  # 你的麥克風 arecord 名稱
-ACCESS_KEY = "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw=="  # 改成你的key
+# 設定參數
+ACCESS_KEY = "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw=="
+KEYWORD_PATH = "Hey-Famix_en_raspberry-pi.ppn"
+AUDIO_FILE = "wake_audio.wav"
 
-def wait_for_wake_word(device_index=2):
-    print(f"Famix Pi 已啟動，請說出喚醒詞 ...")
-    porcupine = pvporcupine.create(
-        access_key=ACCESS_KEY,
-        keyword_paths=[WAKEWORD_PATH]
-    )
-    pa = pyaudio.PyAudio()
-    # 使用 Porcupine 的 sample_rate
-    audio_stream = pa.open(
-        rate=porcupine.sample_rate,
-        channels=1,
-        format=pyaudio.paInt16,
-        input=True,
-        frames_per_buffer=porcupine.frame_length,
-        input_device_index=device_index
-    )
-    try:
-        while True:
-            pcm = audio_stream.read(porcupine.frame_length, exception_on_overflow=False)
-            pcm = np.frombuffer(pcm, dtype=np.int16)
-            if porcupine.process(pcm) >= 0:
-                print("✅ 偵測到喚醒詞，準備開始錄音！")
-                break
-    finally:
-        audio_stream.close()
-        pa.terminate()
-        porcupine.delete()
+# 建立 Porcupine 物件
+porcupine = pvporcupine.create(
+    access_key=ACCESS_KEY,
+    keyword_paths=[KEYWORD_PATH]
+)
 
-def record_audio(wav_path="/tmp/famix_input.wav"):
-    print(f"🎤 開始錄音（{REC_SECONDS} 秒），請開始說話 ...")
-    # 直接用 arecord，rate 請用 16000，保證跟 Porcupine 一致
-    cmd = [
-        "arecord", "-D", DEVICE,
-        "-f", "S16_LE", "-r", "44100",
-        "-c", "1", "-d", str(REC_SECONDS), wav_path
-    ]
-    subprocess.run(cmd, check=True)
-    return wav_path
+pa = pyaudio.PyAudio()
+stream = pa.open(
+    rate=porcupine.sample_rate,
+    channels=1,
+    format=pyaudio.paInt16,
+    input=True,
+    frames_per_buffer=porcupine.frame_length
+)
 
-def wav_to_mp3(wav_path, mp3_path="/tmp/famix_input.mp3"):
-    cmd = [
-        "ffmpeg", "-y", "-i", wav_path,
-        "-codec:a", "libmp3lame", "-qscale:a", "5", mp3_path
-    ]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-    return mp3_path
+print("🟢 等待喚醒詞...")
 
-def send_audio(mp3_path):
-    url = f"{SERVER}/api/audio"
-    print(f"⬆️  上傳 MP3 至伺服器 {url}")
-    with open(mp3_path, "rb") as f:
-        files = {"file": ("voice.mp3", f, "audio/mpeg")}
-        resp = requests.post(url, files=files, timeout=30)
-    resp.raise_for_status()
-    return resp.content
+try:
+    while True:
+        pcm = stream.read(porcupine.frame_length, exception_on_overflow=False)
+        pcm = struct.unpack_from("h" * porcupine.frame_length, pcm)
 
-def play_audio(mp3_bytes, out_path="/tmp/famix_reply.mp3"):
-    with open(out_path, "wb") as fo:
-        fo.write(mp3_bytes)
-    print("🔊 播放伺服器回應 ...")
-    playsound(out_path)
-    os.remove(out_path)
+        if porcupine.process(pcm):
+            print("✅ 喚醒詞偵測成功！開始錄音...")
 
-def main():
-    try:
-        while True:
-            wait_for_wake_word(device_index=2)  # 建議 index=2
-            wav = record_audio()
-            mp3 = wav_to_mp3(wav)
-            reply = send_audio(mp3)
-            play_audio(reply)
-            for fn in (wav, mp3):
-                try: os.remove(fn)
-                except: pass
-            print("=== 已回到待機 ===\n")
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n👋 Bye Famix Pi!")
+            frames = []
+            for _ in range(0, int(porcupine.sample_rate / porcupine.frame_length * 3)):  # 錄 3 秒
+                pcm = stream.read(porcupine.frame_length, exception_on_overflow=False)
+                frames.append(pcm)
 
-if __name__ == "__main__":
-    main()
+            # 存成 wav 檔
+            wf = wave.open(AUDIO_FILE, 'wb')
+            wf.setnchannels(1)
+            wf.setsampwidth(pa.get_sample_size(pyaudio.paInt16))
+            wf.setframerate(porcupine.sample_rate)
+            wf.writeframes(b''.join(frames))
+            wf.close()
+
+            print(f"🎙️ 錄音儲存至 {AUDIO_FILE}，可傳送給伺服器")
+
+except KeyboardInterrupt:
+    print("🛑 停止程式")
+
+finally:
+    stream.stop_stream()
+    stream.close()
+    pa.terminate()
+    porcupine.delete()
