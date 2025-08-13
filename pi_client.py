@@ -6,7 +6,7 @@ import time
 import datetime
 
 ACCESS_KEY = "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw=="
-KEYWORD_PATH = "Hey-Famix_en_raspberry-pi.ppn"
+KEYWORD_PATH = "/home/admin/Porcupine/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"
 AUDIO_FILE = "wake_audio.wav"
 
 # === 建立 Porcupine 偵測器 ===
