@@ -16,7 +16,7 @@ COOLDOWN_SEC = 1.2
 FLUSH_MS     = 300
 OUT_DIR      = "./"
 
-SERVER_BASE  = "http://192.168.0.17:5000"
+SERVER_BASE  = "http://192.168.0.18:5000"
 AUDIO_API    = f"{SERVER_BASE}/api/audio"
 MUSIC_API    = f"{SERVER_BASE}/api/music"
 WEATHER_API  = f"{SERVER_BASE}/api/weather"
