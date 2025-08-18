@@ -16,7 +16,7 @@ COOLDOWN_SEC = 1.2
 FLUSH_MS     = 300
 OUT_DIR      = "./"
 
-SERVER_BASE  = "http://192.168.0.17:5000"
+SERVER_BASE  = "http://192.168.0.18:5000"
 AUDIO_API    = f"{SERVER_BASE}/api/audio"
 MUSIC_API    = f"{SERVER_BASE}/api/music"
 WEATHER_API  = f"{SERVER_BASE}/api/weather"
@@ -36,21 +36,35 @@ async def _edge_tts_to_mp3(text: str, out_path: str, voice: str, rate: str):
     await communicate.save(out_path)
 
 def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
-    """產生並播放一段 TTS 語音（同步阻塞直到播完）"""
+    """產生並播放一段 TTS 語音（轉成乾淨 MP3 再播放）"""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-        mp3_path = fp.name
+        raw_mp3 = fp.name
     try:
-        asyncio.run(_edge_tts_to_mp3(text, mp3_path, voice, rate))
+        # 先存 edge-tts 輸出的原始 mp3
+        asyncio.run(_edge_tts_to_mp3(text, raw_mp3, voice, rate))
+
+        # 用 pydub 重新轉一份乾淨的 CBR mp3
+        sound = AudioSegment.from_file(raw_mp3, format="mp3")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as clean_fp:
+            clean_mp3 = clean_fp.name
+            sound.export(clean_mp3, format="mp3", bitrate="128k")  # 強制轉成 CBR 128k
+
+        # 播放
         pygame.mixer.init()
-        pygame.mixer.music.load(mp3_path)
+        pygame.mixer.music.load(clean_mp3)
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             time.sleep(0.05)
+
     finally:
-        try: pygame.mixer.music.stop(); pygame.mixer.quit()
+        try:
+            pygame.mixer.music.stop()
+            pygame.mixer.quit()
         except: pass
-        try: os.remove(mp3_path)
-        except: pass
+        for f in [raw_mp3, clean_mp3]:
+            try: os.remove(f)
+            except: pass
+
 
 # --------- 上傳到伺服器 ---------
 def upload(path: str):
