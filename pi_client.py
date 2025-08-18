@@ -7,7 +7,7 @@ import pygame, edge_tts
 from pydub import AudioSegment
 
 # ========= config =========
-ACCESS_KEY   = os.environ.get("PICOVOICE_ACCESS_KEY", "你的Key")
+ACCESS_KEY   = os.environ.get("PICOVOICE_ACCESS_KEY", "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw==")
 KEYWORD_PATH = "/home/admin/Porcupine/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"
 DEVICE_INDEX = 2
 SENSITIVITY  = 0.75
