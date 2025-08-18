@@ -15,10 +15,11 @@ from pvrecorder import PvRecorder
 # === 播放 TTS：edge_tts + pygame ===
 import pygame
 import edge_tts
-
+import subprocess
 # === 上傳用 ===
 import requests
 from pydub import AudioSegment
+
 
 # ========= config =========
 ACCESS_KEY   = os.environ.get("PICOVOICE_ACCESS_KEY", "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw==")
@@ -67,6 +68,14 @@ def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
             os.remove(mp3_path)
         except Exception:
             pass
+#----------play_vlc-------------
+
+def play_music_vlc(url: str):
+    try:
+        print(f"[Client] 🎵 播放音樂: {url}")
+        subprocess.Popen(["cvlc", "--play-and-exit", url])
+    except Exception as e:
+        print(f"[Client] 播放音樂失敗: {e}")
 
 # --------- 上傳到伺服器 ---------
 def upload(path: str):
@@ -98,6 +107,11 @@ def upload(path: str):
             while pygame.mixer.music.get_busy():
                 time.sleep(0.05)
             pygame.mixer.quit()
+
+            # 如果有音樂 URL，就在 Pi 播放
+            music_url = resp.headers.get("X-Music-URL")
+            if music_url:
+                play_music_vlc(music_url)
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
     except Exception as e:
