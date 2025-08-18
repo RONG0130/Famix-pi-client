@@ -70,36 +70,40 @@ def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
 
 # --------- 上傳到伺服器 ---------
 def upload(path: str):
-    """將錄好的 WAV 上傳伺服器，接收回覆 MP3 並播放"""
     try:
-        # 轉 mp3
+        # 轉 mp3 上傳
         sound = AudioSegment.from_wav(path)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmpf:
             mp3_path = tmpf.name
             sound.export(mp3_path, format="mp3")
 
-        # 上傳
         with open(mp3_path, "rb") as f:
             files = {"file": f}
-            print(f"[Client] 上傳 {mp3_path} → {SERVER_URL}")
             resp = requests.post(SERVER_URL, files=files)
 
         if resp.status_code == 200:
-            print("[Client] 收到伺服器回覆 MP3，開始播放…")
-            # 存回覆 mp3
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as replyf:
-                reply_path = replyf.name
-                replyf.write(resp.content)
+            data = resp.json()
+            intent = data["intent"]
+            reply_text = data["reply_text"]
+            print(f"[Client] Intent={intent}, Reply={reply_text}")
 
-            # 播放伺服器回覆
-            pygame.mixer.init()
-            pygame.mixer.music.load(reply_path)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                time.sleep(0.05)
-            pygame.mixer.quit()
+            if intent == "music" and data["video_url"]:
+                print(f"[Client] 🎵 播放音樂：{reply_text}")
+                subprocess.Popen(["vlc", "--intf", "dummy", "--no-video", data["video_url"]])
+            else:
+                # 播伺服器回覆的 mp3
+                mp3_bytes = bytes(data["mp3"])
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as replyf:
+                    replyf.write(mp3_bytes)
+                    reply_path = replyf.name
+                pygame.mixer.init()
+                pygame.mixer.music.load(reply_path)
+                pygame.mixer.music.play()
+                while pygame.mixer.music.get_busy():
+                    time.sleep(0.05)
+                pygame.mixer.quit()
         else:
-            print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
+            print(f"[Client] 上傳失敗: {resp.status_code}")
     except Exception as e:
         print(f"[Client] 上傳/播放失敗: {e}")
 
