@@ -30,7 +30,7 @@ COOLDOWN_SEC = 1.2          # 冷卻秒數
 FLUSH_MS     = 300          # flush 麥克風緩衝，避免回授觸發
 OUT_DIR      = "./"         # 錄音檔輸出資料夾
 
-SERVER_URL   = "http://192.168.0.17:5000/api/audio"
+SERVER_URL   = "http://192.168.0.18:5000/api/audio"
 
 # TTS 設定
 TTS_VOICE    = "zh-TW-YunJheNeural"
