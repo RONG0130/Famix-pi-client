@@ -30,34 +30,35 @@ TTS_IDLE_TEXT= "Famix已進入待機模式"
 def timestamp(): return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # --------- Edge-TTS ---------
-# --------- Edge-TTS ---------
-async def _edge_tts_to_mp3(text: str, out_path: str, voice: str, rate: str):
+async def _edge_tts_to_wav(text: str, out_path: str, voice: str, rate: str):
     communicate = edge_tts.Communicate(text=text, voice=voice, rate=rate)
     await communicate.save(out_path)
 
 def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
     """產生並播放一段 TTS 語音（同步阻塞直到播完）"""
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-        mp3_path = fp.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
+        wav_path = fp.name
     try:
-        asyncio.run(_edge_tts_to_mp3(text, mp3_path, voice, rate))
+        # edge-tts 產生 wav (但可能不是 PCM16)
+        asyncio.run(_edge_tts_to_wav(text, wav_path, voice, rate))
+
+        # 轉成標準 PCM16 WAV
+        sound = AudioSegment.from_file(wav_path)
+        pcm_path = wav_path.replace(".wav", "_pcm.wav")
+        sound.export(pcm_path, format="wav", parameters=["-acodec", "pcm_s16le"])
+
+        # 播放
         pygame.mixer.init()
-        pygame.mixer.music.load(mp3_path)
+        pygame.mixer.music.load(pcm_path)
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             time.sleep(0.05)
     finally:
-        try:
-            pygame.mixer.music.stop()
-            pygame.mixer.quit()
-        except Exception:
-            pass
-        try:
-            os.remove(mp3_path)
-        except Exception:
-            pass
-
-
+        for f in [wav_path, pcm_path]:
+            try:
+                os.remove(f)
+            except:
+                pass
 # --------- 上傳/呼叫伺服器 ---------
 def upload_audio(path):
     """上傳錄音給伺服器，伺服器回傳 mp3 回覆"""
