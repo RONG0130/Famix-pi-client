@@ -68,43 +68,49 @@ def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
             os.remove(mp3_path)
         except Exception:
             pass
-#----------play_vlc-------------
+# ----------play_vlc-------------
+import vlc
 
-vlc_process = None
+vlc_instance = vlc.Instance()
+player = None
 
 def play_music_vlc(url: str):
-    global vlc_process
+    """播放 YouTube 音樂串流"""
+    global player
     try:
-        # 如果已經在播，先停掉
-        if vlc_process and vlc_process.poll() is None:
-            vlc_process.terminate()
+        # 如果已有播放，先停止
+        if player and player.is_playing():
+            player.stop()
 
+        media = vlc_instance.media_new(url)
+        player = vlc_instance.media_player_new()
+        player.set_media(media)
+        player.play()
         print(f"[Client] 🎵 播放音樂: {url}")
-        vlc_process = subprocess.Popen(
-            ["cvlc", "--intf", "rc", url],
-            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
     except Exception as e:
         print(f"[Client] 播放音樂失敗: {e}")
 
 def pause_music():
-    global vlc_process
-    if vlc_process and vlc_process.poll() is None:
-        vlc_process.stdin.write(b"pause\n")
-        vlc_process.stdin.flush()
+    """暫停音樂"""
+    global player
+    if player and player.is_playing():
+        player.pause()
         print("[Client] ⏸ 暫停音樂")
 
 def resume_music():
-    # VLC 的 pause 指令其實是「切換暫停/繼續」
-    pause_music()
-    print("[Client] ▶️ 繼續音樂")
+    """繼續音樂"""
+    global player
+    if player and not player.is_playing():
+        player.pause()  # VLC 的 pause() 是 toggle，非播放狀態下呼叫即繼續
+        print("[Client] ▶️ 繼續音樂")
 
 def stop_music():
-    global vlc_process
-    if vlc_process and vlc_process.poll() is None:
-        vlc_process.stdin.write(b"stop\n")
-        vlc_process.stdin.flush()
+    """停止音樂"""
+    global player
+    if player:
+        player.stop()
         print("[Client] ⏹ 停止音樂")
+
 
 # --------- 上傳到伺服器 ---------
 def upload(path: str):
