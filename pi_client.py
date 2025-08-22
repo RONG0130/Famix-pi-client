@@ -1,3 +1,4 @@
+pi:
 # -*- coding: utf-8 -*-
 # Porcupine wake word -> TTS prompt -> record -> flush -> cooldown -> TTS standby -> back to standby -> upload to server
 import os
@@ -30,8 +31,6 @@ RECORD_SEC   = 3            # 錄音長度
 COOLDOWN_SEC = 1.2          # 冷卻秒數
 FLUSH_MS     = 300          # flush 麥克風緩衝，避免回授觸發
 OUT_DIR      = "./"         # 錄音檔輸出資料夾
-
-music_process = None  # 全域變數，記錄 VLC 播放進程
 
 SERVER_URL   = "http://192.168.0.18:5000/api/audio"
 
@@ -72,38 +71,41 @@ def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
             pass
 #----------play_vlc-------------
 
+vlc_process = None
+
 def play_music_vlc(url: str):
-    global music_process
-    stop_music()  # 確保不會同時播放多首
+    global vlc_process
     try:
+        # 如果已經在播，先停掉
+        if vlc_process and vlc_process.poll() is None:
+            vlc_process.terminate()
+
         print(f"[Client] 🎵 播放音樂: {url}")
-        music_process = subprocess.Popen(
-            ["cvlc", "--intf", "rc", "--rc-fake-tty", url],
+        vlc_process = subprocess.Popen(
+            ["cvlc", "--intf", "rc", url],
             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
     except Exception as e:
         print(f"[Client] 播放音樂失敗: {e}")
 
-def stop_music():
-    global music_process
-    if music_process and music_process.poll() is None:
-        print("[Client] ⏹ 停止音樂")
-        music_process.terminate()
-        music_process = None
-
 def pause_music():
-    global music_process
-    if music_process and music_process.poll() is None:
+    global vlc_process
+    if vlc_process and vlc_process.poll() is None:
+        vlc_process.stdin.write(b"pause\n")
+        vlc_process.stdin.flush()
         print("[Client] ⏸ 暫停音樂")
-        try:
-            music_process.stdin.write(b"pause\n")
-            music_process.stdin.flush()
-        except Exception as e:
-            print(f"[Client] 無法暫停: {e}")
 
 def resume_music():
-    # VLC 的 "pause" 是切換開關，所以 resume 其實跟 pause 一樣
+    # VLC 的 pause 指令其實是「切換暫停/繼續」
     pause_music()
+    print("[Client] ▶️ 繼續音樂")
+
+def stop_music():
+    global vlc_process
+    if vlc_process and vlc_process.poll() is None:
+        vlc_process.stdin.write(b"stop\n")
+        vlc_process.stdin.flush()
+        print("[Client] ⏹ 停止音樂")
 
 # --------- 上傳到伺服器 ---------
 def upload(path: str):
@@ -128,7 +130,7 @@ def upload(path: str):
                 reply_path = replyf.name
                 replyf.write(resp.content)
 
-            # 播放伺服器回覆 (TTS)
+            # 播放伺服器回覆
             pygame.mixer.init()
             pygame.mixer.music.load(reply_path)
             pygame.mixer.music.play()
@@ -136,26 +138,14 @@ def upload(path: str):
                 time.sleep(0.05)
             pygame.mixer.quit()
 
-            # === 音樂播放控制 ===
             # 如果有音樂 URL，就在 Pi 播放
             music_url = resp.headers.get("X-Music-URL")
             if music_url:
                 play_music_vlc(music_url)
-
-            # 根據伺服器回覆的文字，做暫停/繼續/停止控制
-            reply_text = resp.headers.get("X-Reply-Text", "")
-            if "暫停" in reply_text:
-                pause_music()
-            elif "繼續" in reply_text or "播放" in reply_text:
-                resume_music()
-            elif "停止" in reply_text:
-                stop_music()
-
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
     except Exception as e:
         print(f"[Client] 上傳/播放失敗: {e}")
-
 
 # --------- 錄音與流程 ---------
 def record_after_hit(recorder, porcupine, first_frame):
