@@ -128,7 +128,7 @@ def upload(path: str):
                 reply_path = replyf.name
                 replyf.write(resp.content)
 
-            # 播放伺服器回覆
+            # 播放伺服器回覆 (TTS)
             pygame.mixer.init()
             pygame.mixer.music.load(reply_path)
             pygame.mixer.music.play()
@@ -136,14 +136,26 @@ def upload(path: str):
                 time.sleep(0.05)
             pygame.mixer.quit()
 
+            # === 音樂播放控制 ===
             # 如果有音樂 URL，就在 Pi 播放
             music_url = resp.headers.get("X-Music-URL")
             if music_url:
                 play_music_vlc(music_url)
+
+            # 根據伺服器回覆的文字，做暫停/繼續/停止控制
+            reply_text = resp.headers.get("X-Reply-Text", "")
+            if "暫停" in reply_text:
+                pause_music()
+            elif "繼續" in reply_text or "播放" in reply_text:
+                resume_music()
+            elif "停止" in reply_text:
+                stop_music()
+
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
     except Exception as e:
         print(f"[Client] 上傳/播放失敗: {e}")
+
 
 # --------- 錄音與流程 ---------
 def record_after_hit(recorder, porcupine, first_frame):
