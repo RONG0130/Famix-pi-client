@@ -31,6 +31,8 @@ COOLDOWN_SEC = 1.2          # 冷卻秒數
 FLUSH_MS     = 300          # flush 麥克風緩衝，避免回授觸發
 OUT_DIR      = "./"         # 錄音檔輸出資料夾
 
+music_process = None  # 全域變數，記錄 VLC 播放進程
+
 SERVER_URL   = "http://192.168.0.18:5000/api/audio"
 
 # TTS 設定
@@ -71,11 +73,37 @@ def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
 #----------play_vlc-------------
 
 def play_music_vlc(url: str):
+    global music_process
+    stop_music()  # 確保不會同時播放多首
     try:
         print(f"[Client] 🎵 播放音樂: {url}")
-        subprocess.Popen(["cvlc", "--play-and-exit", url])
+        music_process = subprocess.Popen(
+            ["cvlc", "--intf", "rc", "--rc-fake-tty", url],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     except Exception as e:
         print(f"[Client] 播放音樂失敗: {e}")
+
+def stop_music():
+    global music_process
+    if music_process and music_process.poll() is None:
+        print("[Client] ⏹ 停止音樂")
+        music_process.terminate()
+        music_process = None
+
+def pause_music():
+    global music_process
+    if music_process and music_process.poll() is None:
+        print("[Client] ⏸ 暫停音樂")
+        try:
+            music_process.stdin.write(b"pause\n")
+            music_process.stdin.flush()
+        except Exception as e:
+            print(f"[Client] 無法暫停: {e}")
+
+def resume_music():
+    # VLC 的 "pause" 是切換開關，所以 resume 其實跟 pause 一樣
+    pause_music()
 
 # --------- 上傳到伺服器 ---------
 def upload(path: str):
