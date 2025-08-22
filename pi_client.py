@@ -1,4 +1,3 @@
-pi:
 # -*- coding: utf-8 -*-
 # Porcupine wake word -> TTS prompt -> record -> flush -> cooldown -> TTS standby -> back to standby -> upload to server
 import os
