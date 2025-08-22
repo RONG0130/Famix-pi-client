@@ -142,6 +142,15 @@ def upload(path: str):
             music_url = resp.headers.get("X-Music-URL")
             if music_url:
                 play_music_vlc(music_url)
+
+            # 如果有控制指令
+            music_ctrl = resp.headers.get("X-Music-CTRL")
+            if music_ctrl == "pause":
+                pause_music()
+            elif music_ctrl == "resume":
+                resume_music()
+            elif music_ctrl == "stop":
+                stop_music()
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
     except Exception as e:
