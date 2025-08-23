@@ -213,6 +213,14 @@ def main():
             result = porcupine.process(pcm)
             if result >= 0:
                 print("[Hit] 偵測到喚醒詞")
+            
+                # 🚨 自動暫停音樂，避免干擾錄音
+                try:
+                    if player and player.is_playing():
+                        pause_music()
+                except Exception as e:
+                    print(f"[Client] 音樂暫停失敗: {e}")
+            
                 recorder.stop()
                 tts_say_blocking(TTS_HIT_TEXT)
                 recorder.start()
