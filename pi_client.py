@@ -21,6 +21,9 @@ import subprocess
 import requests
 from pydub import AudioSegment
 
+import struct
+rms = audioop.rms(struct.pack("<" + "h"*len(frame), *frame), 2)
+
 
 # ========= config =========
 ACCESS_KEY   = os.environ.get("PICOVOICE_ACCESS_KEY", "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw==")
@@ -187,8 +190,9 @@ def record_until_silence(recorder, porcupine, first_frame,
         frame = recorder.read()
         frames.append(frame)
 
-        # 計算音量 (RMS)
-        rms = audioop.rms(frame, 2)  # 16-bit frame
+        # ✅ 把 list 轉成 bytes 再算音量
+        frame_bytes = struct.pack("<" + "h"*len(frame), *frame)
+        rms = audioop.rms(frame_bytes, 2)  # 16-bit frame
         if rms < 500:  # 靜音閾值，可調
             if silence_start is None:
                 silence_start = time.time()
