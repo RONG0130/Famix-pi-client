@@ -173,7 +173,7 @@ def upload(path: str):
 
 # --------- 錄音與流程 ---------
 def record_until_silence(recorder, porcupine, first_frame,
-                         silence_limit=0.8, frame_duration=20, max_duration=120):
+                         silence_limit=1.2, frame_duration=20, max_duration=120):
     """
     錄音直到偵測到靜音，或達到 max_duration 秒
     - silence_limit: 靜音持續秒數判斷結束
