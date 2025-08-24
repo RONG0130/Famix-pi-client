@@ -21,8 +21,6 @@ import subprocess
 import requests
 from pydub import AudioSegment
 
-import struct
-rms = audioop.rms(struct.pack("<" + "h"*len(frame), *frame), 2)
 
 
 # ========= config =========
