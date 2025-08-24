@@ -264,7 +264,7 @@ def main():
                 flush_buffer(recorder, porcupine, FLUSH_MS)
 
                 # 錄音
-                print([Recording] 開始錄音（靜音檢測中）…")
+                print("[Recording] 開始錄音（靜音檢測中）…")
                 first_frame = recorder.read()
                 out_path = record_until_silence(recorder, porcupine, first_frame)
                 
