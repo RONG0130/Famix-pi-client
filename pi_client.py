@@ -8,6 +8,7 @@ import struct
 import datetime
 import tempfile
 import asyncio
+import audioop 
 
 import pvporcupine
 from pvrecorder import PvRecorder
@@ -170,13 +171,39 @@ def upload(path: str):
         print(f"[Client] 上傳/播放失敗: {e}")
 
 # --------- 錄音與流程 ---------
-def record_after_hit(recorder, porcupine, first_frame):
-    """偵測到後，從 first_frame 開始錄 RECORD_SEC 秒並回傳檔名"""
+def record_until_silence(recorder, porcupine, first_frame,
+                         silence_limit=0.8, frame_duration=20, max_duration=120):
+    """
+    錄音直到偵測到靜音，或達到 max_duration 秒
+    - silence_limit: 靜音持續秒數判斷結束
+    - frame_duration: 每幀的毫秒數
+    - max_duration: 最大錄音長度 (秒) - 保險用
+    """
     frames = [first_frame]
-    frames_needed = int(porcupine.sample_rate / porcupine.frame_length * RECORD_SEC) - 1
-    for _ in range(max(0, frames_needed)):
-        frames.append(recorder.read())
+    silence_start = None
+    max_frames = int((1000 / frame_duration) * max_duration)
 
+    for i in range(max_frames):
+        frame = recorder.read()
+        frames.append(frame)
+
+        # 計算音量 (RMS)
+        rms = audioop.rms(frame, 2)  # 16-bit frame
+        if rms < 500:  # 靜音閾值，可調
+            if silence_start is None:
+                silence_start = time.time()
+            elif time.time() - silence_start > silence_limit:
+                print("[Client] 偵測到靜音，結束錄音")
+                break
+        else:
+            silence_start = None
+    else:
+        # 🚨 超過最大錄音長度
+        print("[Client] ⚠️ 錄音超過最大長度，可能有問題")
+        tts_say_blocking("Famix錄音系統出現異常，請稍後再試")
+        return None
+
+    # 儲存檔案
     out_path = os.path.join(OUT_DIR, f"wake_audio_{timestamp()}.wav")
     with wave.open(out_path, 'wb') as wf:
         wf.setnchannels(1)
@@ -237,11 +264,11 @@ def main():
                 # 錄音
                 print(f"[Recording] {RECORD_SEC} 秒…")
                 first_frame = recorder.read()
-                out_path = record_after_hit(recorder, porcupine, first_frame)
-                print(f"[Saved] {out_path}")
-
-                # 上傳給伺服器
-                upload(out_path)
+                out_path = record_until_silence(recorder, porcupine, first_frame)
+                
+                if out_path:  # ✅ 只有在正常錄音結束時才上傳
+                    print(f"[Saved] {out_path}")
+                    upload(out_path)
 
                 # 冷卻
                 print(f"[Cooldown] {COOLDOWN_SEC}s …")
