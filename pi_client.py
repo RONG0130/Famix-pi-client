@@ -162,10 +162,16 @@ def upload(path: str):
             session_ctrl = resp.headers.get("X-Session")
             if session_ctrl == "idle":
                 print("[Client] 伺服器要求進入待機")
-                # 可以在這裡播報 TTS，或單純打印
             elif session_ctrl == "shutdown":
                 print("[Client] 伺服器要求關機，Pi 程式結束")
-                sys.exit(0)   # 🔴 直接退出程式
+                sys.exit(0)
+            elif session_ctrl == "followup":
+                print("[Client] 伺服器要求追問模式，再次錄音")
+                recorder.stop()
+                first_frame = recorder.read()
+                out_path = record_until_silence(recorder, porcupine, first_frame)
+                if out_path:
+                    upload(out_path)   # ✅ 再次上傳（形成多輪對話）
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
     except Exception as e:
