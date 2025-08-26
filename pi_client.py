@@ -215,7 +215,6 @@ def main():
     if not ACCESS_KEY or "YOUR_ACCESS_KEY_HERE" in ACCESS_KEY:
         print("⚠️ 請先填入 Porcupine ACCESS_KEY（建議用環境變數 PICOVOICE_ACCESS_KEY）。")
         sys.exit(1)
-    os.makedirs(OUT_DIR, exist_ok=True)
 
     porcupine = pvporcupine.create(
         access_key=ACCESS_KEY,
