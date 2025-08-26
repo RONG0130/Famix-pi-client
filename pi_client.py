@@ -288,8 +288,8 @@ def main():
                 print(f"[Cooldown] {COOLDOWN_SEC}s …")
                 time.sleep(COOLDOWN_SEC)
 
-                # 待機播報 (避免和伺服器 idle 重複)
-                if session_ctrl != "idle":  
+                # 待機播報 (只要不是關機就播)
+                if session_ctrl != "shutdown":  
                     recorder.stop()
                     tts_say_blocking(TTS_IDLE_TEXT)
                     recorder.start()
