@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Porcupine wake word -> TTS prompt -> record -> flush -> cooldown -> TTS standby -> back to standby -> upload to server
 import os
+import io
 import sys
 import time
 import wave
@@ -28,9 +29,8 @@ ACCESS_KEY   = os.environ.get("PICOVOICE_ACCESS_KEY", "lFgwg3geIsAy15neS3EIMCa1+
 KEYWORD_PATH = "/home/admin/Porcupine/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"
 DEVICE_INDEX = 2            # 改成你的 USB Mic index
 SENSITIVITY  = 0.75
-COOLDOWN_SEC = 1.2          # 冷卻秒數
+COOLDOWN_SEC = 0.5          # 冷卻秒數
 FLUSH_MS     = 300          # flush 麥克風緩衝，避免回授觸發
-OUT_DIR      = "./"         # 錄音檔輸出資料夾
 
 SERVER_URL   = "http://192.168.0.18:5000/api/audio"
 
@@ -114,23 +114,27 @@ def stop_music():
 
 
 # --------- 上傳到伺服器 ---------
-def upload(path: str):
-    """將錄好的 WAV 上傳伺服器，接收回覆 MP3 並播放"""
+def upload(frames, sample_rate):
+    """將錄好的 frames 直接上傳伺服器，不存檔"""
     try:
-        # 轉 mp3
-        sound = AudioSegment.from_wav(path)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmpf:
-            mp3_path = tmpf.name
-            sound.export(mp3_path, format="mp3")
+        # ✅ 直接寫入記憶體 BytesIO
+        wav_io = io.BytesIO()
+        with wave.open(wav_io, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # int16
+            wf.setframerate(sample_rate)
+            for block in frames:
+                wf.writeframes(struct.pack("<" + "h"*len(block), *block))
+        wav_io.seek(0)  # 回到開頭
 
         # 上傳
-        with open(mp3_path, "rb") as f:
-            files = {"file": f}
-            print(f"[Client] 上傳 {mp3_path} → {SERVER_URL}")
-            resp = requests.post(SERVER_URL, files=files)
+        files = {"file": ("audio.wav", wav_io, "audio/wav")}
+        print(f"[Client] 上傳錄音 → {SERVER_URL}")
+        resp = requests.post(SERVER_URL, files=files)
 
         if resp.status_code == 200:
             print("[Client] 收到伺服器回覆 MP3，開始播放…")
+
             # 存回覆 mp3
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as replyf:
                 reply_path = replyf.name
@@ -144,12 +148,11 @@ def upload(path: str):
                 time.sleep(0.05)
             pygame.mixer.quit()
 
-            # 如果有音樂 URL，就在 Pi 播放
+            # 控制訊號
             music_url = resp.headers.get("X-Music-URL")
             if music_url:
                 play_music_vlc(music_url)
 
-            # 如果有控制指令
             music_ctrl = resp.headers.get("X-Music-CTRL")
             if music_ctrl == "pause":
                 pause_music()
@@ -157,9 +160,9 @@ def upload(path: str):
                 resume_music()
             elif music_ctrl == "stop":
                 stop_music()
-            # 📴 Session 控制
+
             session_ctrl = resp.headers.get("X-Session")
-            return session_ctrl   # ✅ 把狀態回傳給 main()
+            return session_ctrl
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
             return None
@@ -201,15 +204,7 @@ def record_until_silence(recorder, porcupine, first_frame,
         tts_say_blocking("Famix錄音系統出現異常，請稍後再試")
         return None
 
-    # 儲存檔案
-    out_path = os.path.join(OUT_DIR, f"wake_audio_{timestamp()}.wav")
-    with wave.open(out_path, 'wb') as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)  # int16
-        wf.setframerate(porcupine.sample_rate)
-        for block in frames:
-            wf.writeframes(struct.pack("<" + "h"*len(block), *block))
-    return out_path
+    return frames   # ⬅️ 必須和 with 同層縮排
 
 def flush_buffer(recorder, porcupine, ms: int):
     frames_to_drop = int(porcupine.sample_rate / porcupine.frame_length * (ms / 1000.0))
@@ -262,18 +257,17 @@ def main():
                 # 錄音
                 print("[Recording] 開始錄音（靜音檢測中）…")
                 first_frame = recorder.read()
-                out_path = record_until_silence(recorder, porcupine, first_frame)
-                if out_path:  
-                    print(f"[Saved] {out_path}")
-                    session_ctrl = upload(out_path)
+                frames = record_until_silence(recorder, porcupine, first_frame)
+                if frames:
+                    session_ctrl = upload(frames, porcupine.sample_rate)
                 
                     # ✅ 如果伺服器要求追問模式
                     while session_ctrl == "followup":
                         print("[Client] 伺服器要求追問模式，再次錄音")
                         first_frame = recorder.read()
-                        out_path = record_until_silence(recorder, porcupine, first_frame)
-                        if out_path:
-                            session_ctrl = upload(out_path)
+                        frames = record_until_silence(recorder, porcupine, first_frame)
+                        if frames:
+                            session_ctrl = upload(frames, porcupine.sample_rate)
                         else:
                             break
 
