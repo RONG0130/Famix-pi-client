@@ -282,11 +282,12 @@ def main():
                 print(f"[Cooldown] {COOLDOWN_SEC}s …")
                 time.sleep(COOLDOWN_SEC)
 
-                # 待機播報
-                recorder.stop()
-                tts_say_blocking(TTS_IDLE_TEXT)
-                recorder.start()
-                flush_buffer(recorder, porcupine, FLUSH_MS)
+                # 待機播報 (避免和伺服器 idle 重複)
+                if session_ctrl != "idle":  
+                    recorder.stop()
+                    tts_say_blocking(TTS_IDLE_TEXT)
+                    recorder.start()
+                    flush_buffer(recorder, porcupine, FLUSH_MS)
                 print("[Standby] 回到待機，繼續偵測…")
 
     except KeyboardInterrupt:
