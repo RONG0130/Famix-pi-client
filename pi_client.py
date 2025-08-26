@@ -28,7 +28,6 @@ ACCESS_KEY   = os.environ.get("PICOVOICE_ACCESS_KEY", "lFgwg3geIsAy15neS3EIMCa1+
 KEYWORD_PATH = "/home/admin/Porcupine/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"
 DEVICE_INDEX = 2            # 改成你的 USB Mic index
 SENSITIVITY  = 0.75
-RECORD_SEC   = 3            # 錄音長度
 COOLDOWN_SEC = 1.2          # 冷卻秒數
 FLUSH_MS     = 300          # flush 麥克風緩衝，避免回授觸發
 OUT_DIR      = "./"         # 錄音檔輸出資料夾
@@ -160,22 +159,13 @@ def upload(path: str):
                 stop_music()
             # 📴 Session 控制
             session_ctrl = resp.headers.get("X-Session")
-            if session_ctrl == "idle":
-                print("[Client] 伺服器要求進入待機")
-            elif session_ctrl == "shutdown":
-                print("[Client] 伺服器要求關機，Pi 程式結束")
-                sys.exit(0)
-            elif session_ctrl == "followup":
-                print("[Client] 伺服器要求追問模式，再次錄音")
-                recorder.stop()
-                first_frame = recorder.read()
-                out_path = record_until_silence(recorder, porcupine, first_frame)
-                if out_path:
-                    upload(out_path)   # ✅ 再次上傳（形成多輪對話）
+            return session_ctrl   # ✅ 把狀態回傳給 main()
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
+            return None
     except Exception as e:
         print(f"[Client] 上傳/播放失敗: {e}")
+        return None
 
 # --------- 錄音與流程 ---------
 def record_until_silence(recorder, porcupine, first_frame,
@@ -273,10 +263,20 @@ def main():
                 print("[Recording] 開始錄音（靜音檢測中）…")
                 first_frame = recorder.read()
                 out_path = record_until_silence(recorder, porcupine, first_frame)
-                
-                if out_path:  # ✅ 只有在正常錄音結束時才上傳
+                if out_path:  
                     print(f"[Saved] {out_path}")
-                    upload(out_path)
+                    session_ctrl = upload(out_path)
+                
+                    # ✅ 如果伺服器要求追問模式
+                    while session_ctrl == "followup":
+                        print("[Client] 伺服器要求追問模式，再次錄音")
+                        first_frame = recorder.read()
+                        out_path = record_until_silence(recorder, porcupine, first_frame)
+                        if out_path:
+                            session_ctrl = upload(out_path)
+                        else:
+                            break
+
 
                 # 冷卻
                 print(f"[Cooldown] {COOLDOWN_SEC}s …")
