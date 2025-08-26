@@ -39,6 +39,7 @@ TTS_VOICE    = "zh-TW-YunJheNeural"
 TTS_RATE     = "+5%"
 TTS_HIT_TEXT = "你好，請問有什麼需要幫助的嗎？"
 TTS_IDLE_TEXT= "Famix已進入待機模式"
+is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -50,16 +51,23 @@ async def _edge_tts_to_mp3(text: str, out_path: str, voice: str, rate: str):
 
 def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
     """產生並播放一段 TTS 語音（同步阻塞直到播完）"""
+    global is_playing_tts
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
         mp3_path = fp.name
     try:
         asyncio.run(_edge_tts_to_mp3(text, mp3_path, voice, rate))
         pygame.mixer.init()
         pygame.mixer.music.load(mp3_path)
+
+        # ✅ 播放開始 → 標記
+        is_playing_tts = True
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             time.sleep(0.05)
+
     finally:
+        # ✅ 播放結束 → 清除標記
+        is_playing_tts = False
         try:
             pygame.mixer.music.stop()
             pygame.mixer.quit()
@@ -236,6 +244,11 @@ def main():
 
     try:
         while True:
+            # ✅ 如果還在播 TTS，直接跳過，不錄音
+            if is_playing_tts:
+                time.sleep(0.1)
+                continue
+
             pcm = recorder.read()
             result = porcupine.process(pcm)
             if result >= 0:
