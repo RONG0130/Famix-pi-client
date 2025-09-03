@@ -195,6 +195,10 @@ def record_until_silence(recorder, porcupine, first_frame,
         tts_say_blocking("Famix錄音系統出現異常，請稍後再試")
         return None
 
+        if len(frames) < 5:
+        print("[Client] ⚠️ 錄到的音訊太少，略過")
+        return None
+
     return frames
 
 def flush_buffer(recorder, porcupine, ms: int):
