@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# Porcupine wake word -> TTS prompt -> record -> flush -> cooldown -> TTS standby -> back to standby -> upload to server
 import os
 import io
 import sys
@@ -17,20 +16,21 @@ from pvrecorder import PvRecorder
 # === 播放 TTS：edge_tts + pygame ===
 import pygame
 import edge_tts
-import subprocess
 # === 上傳用 ===
 import requests
 from pydub import AudioSegment
 
+# === VLC 音樂播放 ===
+import vlc
 
 
 # ========= config =========
 ACCESS_KEY   = os.environ.get("PICOVOICE_ACCESS_KEY", "lFgwg3geIsAy15neS3EIMCa1+QrXmlxcbtUyW7GdTjyFl+5TDcrkQw==")
 KEYWORD_PATH = "/home/admin/Porcupine/hi-fe-mix_en_raspberry-pi_v3_0_0.ppn"
-DEVICE_INDEX = 2            # 改成你的 USB Mic index
+DEVICE_INDEX = 2
 SENSITIVITY  = 0.75
-COOLDOWN_SEC = 0.5          # 冷卻秒數
-FLUSH_MS     = 300          # flush 麥克風緩衝，避免回授觸發
+COOLDOWN_SEC = 0.5
+FLUSH_MS     = 300
 
 SERVER_URL   = "http://192.168.20.51:5000/api/audio"
 
@@ -41,8 +41,10 @@ TTS_HIT_TEXT = "你好，請問有什麼需要幫助的嗎？"
 TTS_IDLE_TEXT= "Famix已進入待機模式"
 is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
+
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
 
 # --------- Edge-TTS 播放 ---------
 async def _edge_tts_to_mp3(text: str, out_path: str, voice: str, rate: str):
@@ -50,7 +52,6 @@ async def _edge_tts_to_mp3(text: str, out_path: str, voice: str, rate: str):
     await communicate.save(out_path)
 
 def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
-    """產生並播放一段 TTS 語音（同步阻塞直到播完）"""
     global is_playing_tts
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
         mp3_path = fp.name
@@ -59,14 +60,12 @@ def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
         pygame.mixer.init()
         pygame.mixer.music.load(mp3_path)
 
-        # ✅ 播放開始 → 標記
         is_playing_tts = True
         pygame.mixer.music.play()
         while pygame.mixer.music.get_busy():
             time.sleep(0.05)
 
     finally:
-        # ✅ 播放結束 → 清除標記
         is_playing_tts = False
         try:
             pygame.mixer.music.stop()
@@ -77,20 +76,17 @@ def tts_say_blocking(text: str, voice: str = TTS_VOICE, rate: str = TTS_RATE):
             os.remove(mp3_path)
         except Exception:
             pass
-# ----------play_vlc-------------
-import vlc
 
+
+# ---------- VLC 音樂控制 -------------
 vlc_instance = vlc.Instance()
 player = None
 
 def play_music_vlc(url: str):
-    """播放 YouTube 音樂串流"""
     global player
     try:
-        # 如果已有播放，先停止
         if player and player.is_playing():
             player.stop()
-
         media = vlc_instance.media_new(url)
         player = vlc_instance.media_player_new()
         player.set_media(media)
@@ -100,21 +96,18 @@ def play_music_vlc(url: str):
         print(f"[Client] 播放音樂失敗: {e}")
 
 def pause_music():
-    """暫停音樂"""
     global player
     if player and player.is_playing():
         player.pause()
         print("[Client] ⏸ 暫停音樂")
 
 def resume_music():
-    """繼續音樂"""
     global player
-    if player and not player.is_playing():
-        player.pause()  # VLC 的 pause() 是 toggle，非播放狀態下呼叫即繼續
+    if player and player.get_state() == vlc.State.Paused:
+        player.pause()  # toggle
         print("[Client] ▶️ 繼續音樂")
 
 def stop_music():
-    """停止音樂"""
     global player
     if player:
         player.stop()
@@ -123,19 +116,17 @@ def stop_music():
 
 # --------- 上傳到伺服器 ---------
 def upload(frames, sample_rate):
-    """將錄好的 frames 直接上傳伺服器，不存檔"""
+    global is_playing_tts
     try:
-        # ✅ 直接寫入記憶體 BytesIO
         wav_io = io.BytesIO()
         with wave.open(wav_io, 'wb') as wf:
             wf.setnchannels(1)
-            wf.setsampwidth(2)  # int16
+            wf.setsampwidth(2)
             wf.setframerate(sample_rate)
             for block in frames:
                 wf.writeframes(struct.pack("<" + "h"*len(block), *block))
-        wav_io.seek(0)  # 回到開頭
+        wav_io.seek(0)
 
-        # 上傳
         files = {"file": ("audio.wav", wav_io, "audio/wav")}
         print(f"[Client] 上傳錄音 → {SERVER_URL}")
         resp = requests.post(SERVER_URL, files=files)
@@ -143,20 +134,19 @@ def upload(frames, sample_rate):
         if resp.status_code == 200:
             print("[Client] 收到伺服器回覆 MP3，開始播放…")
 
-            # 存回覆 mp3
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as replyf:
                 reply_path = replyf.name
                 replyf.write(resp.content)
 
-            # 播放伺服器回覆
             pygame.mixer.init()
+            is_playing_tts = True
             pygame.mixer.music.load(reply_path)
             pygame.mixer.music.play()
             while pygame.mixer.music.get_busy():
                 time.sleep(0.05)
             pygame.mixer.quit()
+            is_playing_tts = False
 
-            # 控制訊號
             music_url = resp.headers.get("X-Music-URL")
             if music_url:
                 play_music_vlc(music_url)
@@ -169,24 +159,19 @@ def upload(frames, sample_rate):
             elif music_ctrl == "stop":
                 stop_music()
 
-            session_ctrl = resp.headers.get("X-Session")
-            return session_ctrl
+            return resp.headers.get("X-Session")
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
             return None
     except Exception as e:
         print(f"[Client] 上傳/播放失敗: {e}")
+        is_playing_tts = False
         return None
+
 
 # --------- 錄音與流程 ---------
 def record_until_silence(recorder, porcupine, first_frame,
                          silence_limit=1.2, frame_duration=20, max_duration=120):
-    """
-    錄音直到偵測到靜音，或達到 max_duration 秒
-    - silence_limit: 靜音持續秒數判斷結束
-    - frame_duration: 每幀的毫秒數
-    - max_duration: 最大錄音長度 (秒) - 保險用
-    """
     frames = [first_frame]
     silence_start = None
     max_frames = int((1000 / frame_duration) * max_duration)
@@ -195,10 +180,9 @@ def record_until_silence(recorder, porcupine, first_frame,
         frame = recorder.read()
         frames.append(frame)
 
-        # ✅ 把 list 轉成 bytes 再算音量
         frame_bytes = struct.pack("<" + "h"*len(frame), *frame)
-        rms = audioop.rms(frame_bytes, 2)  # 16-bit frame
-        if rms < 500:  # 靜音閾值，可調
+        rms = audioop.rms(frame_bytes, 2)
+        if rms < 500:
             if silence_start is None:
                 silence_start = time.time()
             elif time.time() - silence_start > silence_limit:
@@ -207,21 +191,22 @@ def record_until_silence(recorder, porcupine, first_frame,
         else:
             silence_start = None
     else:
-        # 🚨 超過最大錄音長度
-        print("[Client] ⚠️ 錄音超過最大長度，可能有問題")
+        print("[Client] ⚠️ 錄音超過最大長度")
         tts_say_blocking("Famix錄音系統出現異常，請稍後再試")
         return None
 
-    return frames   # ⬅️ 必須和 with 同層縮排
+    return frames
 
 def flush_buffer(recorder, porcupine, ms: int):
-    frames_to_drop = int(porcupine.sample_rate / porcupine.frame_length * (ms / 1000.0))
+    frames_to_drop = int((ms / 1000.0) * (porcupine.sample_rate / porcupine.frame_length))
     for _ in range(max(0, frames_to_drop)):
         _ = recorder.read()
 
+
+# --------- 主程式 ---------
 def main():
     if not ACCESS_KEY or "YOUR_ACCESS_KEY_HERE" in ACCESS_KEY:
-        print("⚠️ 請先填入 Porcupine ACCESS_KEY（建議用環境變數 PICOVOICE_ACCESS_KEY）。")
+        print("⚠️ 請先填入 Porcupine ACCESS_KEY")
         sys.exit(1)
 
     porcupine = pvporcupine.create(
@@ -232,7 +217,6 @@ def main():
     recorder = PvRecorder(device_index=DEVICE_INDEX, frame_length=porcupine.frame_length)
     recorder.start()
 
-    # 啟動時播報待機語
     try:
         recorder.stop()
         tts_say_blocking(TTS_IDLE_TEXT)
@@ -244,7 +228,6 @@ def main():
 
     try:
         while True:
-            # ✅ 如果還在播 TTS，直接跳過，不錄音
             if is_playing_tts:
                 time.sleep(0.1)
                 continue
@@ -253,48 +236,44 @@ def main():
             result = porcupine.process(pcm)
             if result >= 0:
                 print("[Hit] 偵測到喚醒詞")
-            
-                # 🚨 自動暫停音樂，避免干擾錄音
+
                 try:
                     if player and player.is_playing():
                         pause_music()
                 except Exception as e:
                     print(f"[Client] 音樂暫停失敗: {e}")
-            
+
                 recorder.stop()
                 tts_say_blocking(TTS_HIT_TEXT)
                 recorder.start()
                 flush_buffer(recorder, porcupine, FLUSH_MS)
 
-                # 錄音
-                print("[Recording] 開始錄音（靜音檢測中）…")
+                print("[Recording] 開始錄音…")
                 first_frame = recorder.read()
                 frames = record_until_silence(recorder, porcupine, first_frame)
                 if frames:
                     session_ctrl = upload(frames, porcupine.sample_rate)
-                
-                    # ✅ 如果伺服器要求追問模式
-                    while session_ctrl == "followup":
-                        print("[Client] 伺服器要求追問模式，再次錄音")
-                        first_frame = recorder.read()
-                        frames = record_until_silence(recorder, porcupine, first_frame)
-                        if frames:
-                            session_ctrl = upload(frames, porcupine.sample_rate)
-                        else:
-                            break
+                else:
+                    session_ctrl = None
 
+                while session_ctrl == "followup":
+                    print("[Client] 伺服器要求追問模式，再次錄音")
+                    first_frame = recorder.read()
+                    frames = record_until_silence(recorder, porcupine, first_frame)
+                    if frames:
+                        session_ctrl = upload(frames, porcupine.sample_rate)
+                    else:
+                        break
 
-                # 冷卻
                 print(f"[Cooldown] {COOLDOWN_SEC}s …")
                 time.sleep(COOLDOWN_SEC)
 
-                # 待機播報 (只要不是關機就播)
-                if session_ctrl != "shutdown":  
+                if session_ctrl != "shutdown":
                     recorder.stop()
                     tts_say_blocking(TTS_IDLE_TEXT)
                     recorder.start()
                     flush_buffer(recorder, porcupine, FLUSH_MS)
-                print("[Standby] 回到待機，繼續偵測…")
+                print("[Standby] 回到待機…")
 
     except KeyboardInterrupt:
         print("\n[Exit] 結束")
@@ -308,6 +287,7 @@ def main():
             pygame.mixer.quit()
         except Exception:
             pass
+
 
 if __name__ == "__main__":
     main()
