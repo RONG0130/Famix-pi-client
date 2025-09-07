@@ -32,7 +32,7 @@ SENSITIVITY  = 0.75
 COOLDOWN_SEC = 0.5
 FLUSH_MS     = 300
 
-SERVER_URL   = "http://192.168.20.51:5000/api/audio"
+SERVER_URL   = "http://192.168.0.15:5000/api/audio"
 
 # TTS 設定
 TTS_VOICE    = "zh-TW-YunJheNeural"
