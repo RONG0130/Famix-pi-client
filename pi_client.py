@@ -301,16 +301,16 @@ def main():
                 first_frame = recorder.read()
                 frames = record_until_silence(recorder, porcupine, first_frame)
                 if frames:
-                    session_ctrl = upload(frames, porcupine.sample_rate)
+                    session_ctrl = upload(frames, porcupine.sample_rate, recorder, porcupine)
                 else:
                     session_ctrl = None
-
+                
                 while session_ctrl == "followup":
                     print("[Client] 伺服器要求追問模式，再次錄音")
                     first_frame = recorder.read()
                     frames = record_until_silence(recorder, porcupine, first_frame)
                     if frames:
-                        session_ctrl = upload(frames, porcupine.sample_rate)
+                        session_ctrl = upload(frames, porcupine.sample_rate, recorder, porcupine)
                     else:
                         break
 
