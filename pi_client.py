@@ -33,6 +33,8 @@ COOLDOWN_SEC = 0.5
 FLUSH_MS     = 300
 
 SERVER_URL   = "http://192.168.0.15:5000/api/audio"
+SERVER_FACE  = "http://192.168.0.15:5000/api/face"
+SERVER_MSG   = "http://192.168.0.15:5000/api/message"
 
 # TTS 設定
 TTS_VOICE    = "zh-TW-YunJheNeural"
@@ -41,6 +43,39 @@ TTS_HIT_TEXT = "你好，請問有什麼需要幫助的嗎？"
 TTS_IDLE_TEXT= "Famix已進入待機模式"
 is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
+
+def detect_and_report_face():
+    name = "小明"  # TODO: 改成真正人臉辨識結果
+    try:
+        resp = requests.post(SERVER_FACE, json={"name": name})
+        print(f"[Client] 上傳人臉 → {name}, resp={resp.json()}")
+    except Exception as e:
+        print(f"[Client] 上傳人臉失敗: {e}")
+    return name
+
+def record_message_and_upload(name, recorder, porcupine):
+    print("[Client] 🎤 開始錄留言")
+    first_frame = recorder.read()
+    frames = record_until_silence(recorder, porcupine, first_frame,
+                                  silence_limit=2.0, max_duration=180)
+    if not frames:
+        return
+    wav_path = f"/tmp/message_{name}_{timestamp()}.wav"
+    with wave.open(wav_path, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(porcupine.sample_rate)
+        for block in frames:
+            wf.writeframes(struct.pack("<" + "h"*len(block), *block))
+    tts_say_blocking("留言結束")
+    try:
+        with open(wav_path, "rb") as f:
+            files = {"file": (os.path.basename(wav_path), f, "audio/wav")}
+            data = {"name": name}
+            resp = requests.post(SERVER_MSG, files=files, data=data)
+            print(f"[Client] 上傳留言結果: {resp.json()}")
+    except Exception as e:
+        print(f"[Client] 上傳留言失敗: {e}")
 
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -115,7 +150,8 @@ def stop_music():
 
 
 # --------- 上傳到伺服器 ---------
-def upload(frames, sample_rate):
+# --------- 上傳到伺服器 ---------
+def upload(frames, sample_rate, recorder, porcupine):
     global is_playing_tts
     try:
         wav_io = io.BytesIO()
@@ -147,6 +183,13 @@ def upload(frames, sample_rate):
             pygame.mixer.quit()
             is_playing_tts = False
 
+            # 🎯 新增留言模式判斷
+            session_ctrl = resp.headers.get("X-Session")
+            if session_ctrl == "leave_message":
+                name = detect_and_report_face()
+                record_message_and_upload(name, recorder, porcupine)
+                return "idle"
+
             music_url = resp.headers.get("X-Music-URL")
             if music_url:
                 play_music_vlc(music_url)
@@ -159,7 +202,7 @@ def upload(frames, sample_rate):
             elif music_ctrl == "stop":
                 stop_music()
 
-            return resp.headers.get("X-Session")
+            return session_ctrl
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
             return None
@@ -167,6 +210,8 @@ def upload(frames, sample_rate):
         print(f"[Client] 上傳/播放失敗: {e}")
         is_playing_tts = False
         return None
+
+
 
 
 # --------- 錄音與流程 ---------
