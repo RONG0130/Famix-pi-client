@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import io
+import cv2
 import sys
 import time
 import wave
@@ -33,7 +34,7 @@ COOLDOWN_SEC = 0.5
 FLUSH_MS     = 300
 
 SERVER_URL   = "http://192.168.0.15:5000/api/audio"
-SERVER_FACE  = "http://192.168.0.15:5000/api/face"
+SERVER_FACE  = "http://192.168.0.15:5000/api/face_recog"
 SERVER_MSG   = "http://192.168.0.15:5000/api/message"
 
 # TTS 設定
@@ -43,39 +44,54 @@ TTS_HIT_TEXT = "你好，請問有什麼需要幫助的嗎？"
 TTS_IDLE_TEXT= "Famix已進入待機模式"
 is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
+def capture_and_upload_face():
+    """打開攝影機，拍一張照片送到 server"""
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    cap.release()
 
-def detect_and_report_face():
-    name = "小明"  # TODO: 改成真正人臉辨識結果
-    try:
-        resp = requests.post(SERVER_FACE, json={"name": name})
-        print(f"[Client] 上傳人臉 → {name}, resp={resp.json()}")
-    except Exception as e:
-        print(f"[Client] 上傳人臉失敗: {e}")
-    return name
+    if not ret:
+        print("[Client] 拍照失敗")
+        return None
+
+    tmp_path = f"/tmp/face_{timestamp()}.jpg"
+    cv2.imwrite(tmp_path, frame)
+
+    with open(tmp_path, "rb") as f:
+        files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
+        resp = requests.post(SERVER_FACE, files=files)
+
+    os.remove(tmp_path)
+    if resp.status_code == 200:
+        print(f"[Client] 人臉辨識回覆: {resp.json()}")
+        return resp
+    else:
+        print(f"[Client] 人臉上傳失敗 {resp.status_code}")
+        return None
+
 
 def record_message_and_upload(name, recorder, porcupine):
-    print("[Client] 🎤 開始錄留言")
+    """錄留言並送到 server"""
+    print(f"[Client] 🎤 開始錄 {name} 的留言…")
     first_frame = recorder.read()
     frames = record_until_silence(recorder, porcupine, first_frame,
                                   silence_limit=2.0, max_duration=180)
     if not frames:
         return
-    wav_path = f"/tmp/message_{name}_{timestamp()}.wav"
-    with wave.open(wav_path, 'wb') as wf:
+
+    wav_io = io.BytesIO()
+    with wave.open(wav_io, 'wb') as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(porcupine.sample_rate)
         for block in frames:
             wf.writeframes(struct.pack("<" + "h"*len(block), *block))
-    tts_say_blocking("留言結束")
-    try:
-        with open(wav_path, "rb") as f:
-            files = {"file": (os.path.basename(wav_path), f, "audio/wav")}
-            data = {"name": name}
-            resp = requests.post(SERVER_MSG, files=files, data=data)
-            print(f"[Client] 上傳留言結果: {resp.json()}")
-    except Exception as e:
-        print(f"[Client] 上傳留言失敗: {e}")
+    wav_io.seek(0)
+
+    files = {"file": (f"voice_{name}.wav", wav_io, "audio/wav")}
+    data = {"name": name}
+    resp = requests.post(SERVER_MSG, files=files, data=data)
+    print(f"[Client] 上傳留言結果: {resp.json()}")
 
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -150,8 +166,7 @@ def stop_music():
 
 
 # --------- 上傳到伺服器 ---------
-# --------- 上傳到伺服器 ---------
-def upload(frames, sample_rate, recorder, porcupine):
+def upload(frames, sample_rate):
     global is_playing_tts
     try:
         wav_io = io.BytesIO()
@@ -183,13 +198,6 @@ def upload(frames, sample_rate, recorder, porcupine):
             pygame.mixer.quit()
             is_playing_tts = False
 
-            # 🎯 新增留言模式判斷
-            session_ctrl = resp.headers.get("X-Session")
-            if session_ctrl == "leave_message":
-                name = detect_and_report_face()
-                record_message_and_upload(name, recorder, porcupine)
-                return "idle"
-
             music_url = resp.headers.get("X-Music-URL")
             if music_url:
                 play_music_vlc(music_url)
@@ -202,7 +210,7 @@ def upload(frames, sample_rate, recorder, porcupine):
             elif music_ctrl == "stop":
                 stop_music()
 
-            return session_ctrl
+            return resp.headers.get("X-Session")
         else:
             print(f"[Client] 上傳失敗: status={resp.status_code}, text={resp.text}")
             return None
@@ -210,8 +218,6 @@ def upload(frames, sample_rate, recorder, porcupine):
         print(f"[Client] 上傳/播放失敗: {e}")
         is_playing_tts = False
         return None
-
-
 
 
 # --------- 錄音與流程 ---------
@@ -301,16 +307,24 @@ def main():
                 first_frame = recorder.read()
                 frames = record_until_silence(recorder, porcupine, first_frame)
                 if frames:
-                    session_ctrl = upload(frames, porcupine.sample_rate, recorder, porcupine)
+                    session_ctrl = upload(frames, porcupine.sample_rate)
+                    # 檢查是否進入留言模式
+                    if session_ctrl == "leave_message":
+                        face_resp = capture_and_upload_face()
+                        if face_resp and face_resp.headers.get("X-Session") == "start_recording":
+                            name = face_resp.headers.get("X-User-Name", "unknown")
+                            tts_say_blocking(f"{name}你好，請開始留言")
+                            record_message_and_upload(name, recorder, porcupine)
+                        session_ctrl = "idle"
                 else:
                     session_ctrl = None
-                
+
                 while session_ctrl == "followup":
                     print("[Client] 伺服器要求追問模式，再次錄音")
                     first_frame = recorder.read()
                     frames = record_until_silence(recorder, porcupine, first_frame)
                     if frames:
-                        session_ctrl = upload(frames, porcupine.sample_rate, recorder, porcupine)
+                        session_ctrl = upload(frames, porcupine.sample_rate)
                     else:
                         break
 
