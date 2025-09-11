@@ -318,11 +318,13 @@ def main():
                     session_ctrl = upload(frames, porcupine.sample_rate)
                     # 檢查是否進入留言模式
                     if session_ctrl == "leave_message":
-                        face_resp = capture_and_upload_face()
-                        if face_resp and face_resp.headers.get("X-Session") == "start_recording":
-                            name = face_resp.headers.get("X-User-Name", "unknown")
+                        face_data = capture_and_upload_face()
+                        if face_data and face_data.get("status") == "ok":
+                            name = face_data.get("name", "unknown")
                             tts_say_blocking(f"{name}你好，請開始留言")
                             record_message_and_upload(name, recorder, porcupine)
+                        else:
+                            tts_say_blocking("抱歉，無法確認人臉，留言取消")
                         session_ctrl = "idle"
                 else:
                     session_ctrl = None
