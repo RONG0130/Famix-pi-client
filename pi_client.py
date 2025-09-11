@@ -75,7 +75,7 @@ def capture_and_upload_face():
             return None
     finally:
         if os.path.exists(tmp_path):
-            os.remove(tmp_path)e
+            os.remove(tmp_path)
 
 
 def record_message_and_upload(name, recorder, porcupine):
