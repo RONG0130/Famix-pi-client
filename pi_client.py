@@ -57,17 +57,25 @@ def capture_and_upload_face():
     tmp_path = f"/tmp/face_{timestamp()}.jpg"
     cv2.imwrite(tmp_path, frame)
 
-    with open(tmp_path, "rb") as f:
-        files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
-        resp = requests.post(SERVER_FACE, files=files)
+    try:
+        with open(tmp_path, "rb") as f:
+            files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
+            resp = requests.post(SERVER_FACE, files=files)
+        print(f"[Client] Server 回覆狀態碼: {resp.status_code}")
+        print(f"[Client] Server 回覆原始內容: {resp.text[:200]}")  # 印前 200 字
 
-    os.remove(tmp_path)
-    if resp.status_code == 200:
-        print(f"[Client] 人臉辨識回覆: {resp.json()}")
-        return resp
-    else:
-        print(f"[Client] 人臉上傳失敗 {resp.status_code}")
-        return None
+        if resp.status_code == 200:
+            try:
+                return resp.json()
+            except Exception as e:
+                print(f"[Client] JSON 解析失敗: {e}")
+                return None
+        else:
+            print(f"[Client] 人臉上傳失敗 {resp.status_code}")
+            return None
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)e
 
 
 def record_message_and_upload(name, recorder, porcupine):
