@@ -57,7 +57,7 @@ def start_rtsp_server():
         print(f"[Client] ❌ RTSP Server 啟動失敗: {e}")
 
 def capture_and_upload_face():
-    """打開攝影機，拍一張照片送到 server，並解析 JSON 回覆"""
+    """打開攝影機，拍一張照片送到 server"""
     cap = cv2.VideoCapture(0)
     ret, frame = cap.read()
     cap.release()
@@ -73,20 +73,12 @@ def capture_and_upload_face():
         with open(tmp_path, "rb") as f:
             files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
             resp = requests.post(SERVER_FACE, files=files)
+        print(f"[Client] Server 回覆狀態碼: {resp.status_code}")
+        print(f"[Client] Server 回覆原始內容: {resp.text[:200]}")  # 印前 200 字
 
         if resp.status_code == 200:
             try:
-                data = resp.json()
-                print(f"[Client] Server 回覆: {data}")
-
-                # ✅ 在 Pi 端自己播 TTS
-                if data.get("status") == "ok":
-                    name = data.get("name", "unknown")
-                    tts_say_blocking(f"{name}你好，請開始留言")
-                else:
-                    tts_say_blocking(data.get("msg", "人臉辨識失敗"))
-
-                return data
+                return resp.json()
             except Exception as e:
                 print(f"[Client] JSON 解析失敗: {e}")
                 return None
