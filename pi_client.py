@@ -10,6 +10,7 @@ import datetime
 import tempfile
 import asyncio
 import audioop 
+import subprocess
 
 import pvporcupine
 from pvrecorder import PvRecorder
@@ -33,9 +34,9 @@ SENSITIVITY  = 0.75
 COOLDOWN_SEC = 0.5
 FLUSH_MS     = 300
 
-SERVER_URL   = "http://192.168.0.19:5000/api/audio"
-SERVER_FACE  = "http://192.168.0.19:5000/api/face_recog"
-SERVER_MSG   = "http://192.168.0.19:5000/api/message"
+SERVER_URL   = "http://192.168.0.15:5000/api/audio"
+SERVER_FACE  = "http://192.168.0.15:5000/api/face_recog"
+SERVER_MSG   = "http://192.168.0.15:5000/api/message"
 
 # TTS 設定
 TTS_VOICE    = "zh-TW-YunJheNeural"
@@ -44,8 +45,19 @@ TTS_HIT_TEXT = "你好，請問有什麼需要幫助的嗎？"
 TTS_IDLE_TEXT= "Famix已進入待機模式"
 is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
+def start_rtsp_server():
+    """
+    啟動 v4l2rtspserver，讓 Pi 攝影機透過 RTSP 推流給 Server
+    """
+    try:
+        cmd = ["v4l2rtspserver", "-W", "640", "-H", "480", "-F", "15", "/dev/video0"]
+        subprocess.Popen(cmd)
+        print("[Client] ✅ RTSP Server 已啟動 (rtsp://<Pi_IP>:8554/unicast)")
+    except Exception as e:
+        print(f"[Client] ❌ RTSP Server 啟動失敗: {e}")
+
 def capture_and_upload_face():
-    """打開攝影機，拍一張照片送到 server"""
+    """打開攝影機，拍一張照片送到 server，並解析 JSON 回覆"""
     cap = cv2.VideoCapture(0)
     ret, frame = cap.read()
     cap.release()
@@ -61,12 +73,20 @@ def capture_and_upload_face():
         with open(tmp_path, "rb") as f:
             files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
             resp = requests.post(SERVER_FACE, files=files)
-        print(f"[Client] Server 回覆狀態碼: {resp.status_code}")
-        print(f"[Client] Server 回覆原始內容: {resp.text[:200]}")  # 印前 200 字
 
         if resp.status_code == 200:
             try:
-                return resp.json()
+                data = resp.json()
+                print(f"[Client] Server 回覆: {data}")
+
+                # ✅ 在 Pi 端自己播 TTS
+                if data.get("status") == "ok":
+                    name = data.get("name", "unknown")
+                    tts_say_blocking(f"{name}你好，請開始留言")
+                else:
+                    tts_say_blocking(data.get("msg", "人臉辨識失敗"))
+
+                return data
             except Exception as e:
                 print(f"[Client] JSON 解析失敗: {e}")
                 return None
@@ -268,6 +288,8 @@ def flush_buffer(recorder, porcupine, ms: int):
 
 # --------- 主程式 ---------
 def main():
+    start_rtsp_server()
+    
     if not ACCESS_KEY or "YOUR_ACCESS_KEY_HERE" in ACCESS_KEY:
         print("⚠️ 請先填入 Porcupine ACCESS_KEY")
         sys.exit(1)
