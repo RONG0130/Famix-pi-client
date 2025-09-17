@@ -45,16 +45,6 @@ TTS_HIT_TEXT = "你好，請問有什麼需要幫助的嗎？"
 TTS_IDLE_TEXT= "Famix已進入待機模式"
 is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
-def start_rtsp_server():
-    """
-    啟動 v4l2rtspserver，讓 Pi 攝影機透過 RTSP 推流給 Server
-    """
-    try:
-        cmd = ["v4l2rtspserver", "-W", "640", "-H", "480", "-F", "15", "/dev/video0"]
-        subprocess.Popen(cmd)
-        print("[Client] ✅ RTSP Server 已啟動 (rtsp://<Pi_IP>:8554/unicast)")
-    except Exception as e:
-        print(f"[Client] ❌ RTSP Server 啟動失敗: {e}")
 
 def capture_and_upload_face():
     """打開攝影機，拍一張照片送到 server"""
