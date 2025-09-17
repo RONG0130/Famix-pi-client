@@ -61,8 +61,16 @@ def capture_and_upload_face():
         with open(tmp_path, "rb") as f:
             files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
             resp = requests.post(SERVER_FACE, files=files)
-        print(f"[Client] Server 回覆狀態碼: {resp.status_code}")
-        print(f"[Client] Server 回覆原始內容: {resp.text[:200]}")  # 印前 200 字
+        
+            print(f"[Client] Server 回覆狀態碼: {resp.status_code}")
+            print(f"[Client] Server 回覆原始內容: {resp.text[:200]}")  # 印前 200 字
+        
+            ctype = resp.headers.get("Content-Type", "")
+            if "application/json" in ctype:
+                return resp.json()
+            else:
+                print("[Client] Server 回傳不是 JSON，內容前200字:", resp.text[:200])
+                return None
 
         if resp.status_code == 200:
             try:
