@@ -57,8 +57,10 @@ def capture_and_upload_face():
         return None
 
     tmp_path = f"/tmp/face_{timestamp()}.jpg"
-    cv2.imwrite(tmp_path, frame)
-
+    ok = cv2.imwrite(tmp_path, frame)
+    if not ok:
+        print(f"[Client] 儲存圖片失敗: {tmp_path}")
+        return None
     try:
         with open(tmp_path, "rb") as f:
             files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
