@@ -10,7 +10,6 @@ import datetime
 import tempfile
 import asyncio
 import audioop 
-import subprocess
 
 import pvporcupine
 from pvrecorder import PvRecorder
@@ -45,54 +44,35 @@ TTS_HIT_TEXT = "你好，請問有什麼需要幫助的嗎？"
 TTS_IDLE_TEXT= "Famix已進入待機模式"
 is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
-
-def capture_and_upload_face(camera_index: int = 0):
+def capture_and_upload_face():
     """打開攝影機，拍一張照片送到 server"""
-    cap = cv2.VideoCapture(camera_index)
-    if not cap.isOpened():
-        print(f"[Client] 無法開啟攝影機 index={camera_index}")
-        return None
-
+    cap = cv2.VideoCapture(0)
     ret, frame = cap.read()
     cap.release()
 
-    if not ret or frame is None:
-        print("[Client] 拍照失敗，無法讀取影像")
+    if not ret:
+        print("[Client] 拍照失敗")
         return None
 
     tmp_path = f"/tmp/face_{timestamp()}.jpg"
-    ok = cv2.imwrite(tmp_path, frame)
-    if not ok:
-        print(f"[Client] 儲存圖片失敗: {tmp_path}")
-        return None
-
-    # 驗證圖片是否有效
-    try:
-        from PIL import Image
-        with Image.open(tmp_path) as img:
-            img.verify()
-    except Exception as e:
-        print(f"[Client] 圖片驗證失敗: {e}")
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        return None
+    cv2.imwrite(tmp_path, frame)
 
     try:
         with open(tmp_path, "rb") as f:
             files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
             resp = requests.post(SERVER_FACE, files=files)
-
         print(f"[Client] Server 回覆狀態碼: {resp.status_code}")
-        ctype = resp.headers.get("Content-Type", "")
-        if "application/json" in ctype:
-            print(f"[Client] Server JSON: {resp.text[:200]}")
-            return resp.json()
+        print(f"[Client] Server 回覆原始內容: {resp.text[:200]}")  # 印前 200 字
+
+        if resp.status_code == 200:
+            try:
+                return resp.json()
+            except Exception as e:
+                print(f"[Client] JSON 解析失敗: {e}")
+                return None
         else:
-            print(f"[Client] Server 非 JSON 回覆，內容前200字: {resp.text[:200]}")
+            print(f"[Client] 人臉上傳失敗 {resp.status_code}")
             return None
-    except Exception as e:
-        print(f"[Client] 上傳失敗: {e}")
-        return None
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -288,8 +268,6 @@ def flush_buffer(recorder, porcupine, ms: int):
 
 # --------- 主程式 ---------
 def main():
-    
-    
     if not ACCESS_KEY or "YOUR_ACCESS_KEY_HERE" in ACCESS_KEY:
         print("⚠️ 請先填入 Porcupine ACCESS_KEY")
         sys.exit(1)
