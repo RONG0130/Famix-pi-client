@@ -270,7 +270,7 @@ def flush_buffer(recorder, porcupine, ms: int):
 
 # --------- 主程式 ---------
 def main():
-    start_rtsp_server()
+    
     
     if not ACCESS_KEY or "YOUR_ACCESS_KEY_HERE" in ACCESS_KEY:
         print("⚠️ 請先填入 Porcupine ACCESS_KEY")
