@@ -23,6 +23,16 @@ from pydub import AudioSegment
 
 # === VLC 音樂播放 ===
 import vlc
+#------------------------
+import subprocess
+
+def start_rtsp_stream():
+    cmd = [
+        "v4l2rtspserver",
+        "-W", "640", "-H", "480", "-F", "15", "-P", "8554",
+        "/dev/video0"
+    ]
+    return subprocess.Popen(cmd)
 
 
 # ========= config =========
@@ -369,6 +379,66 @@ def main():
         except Exception:
             pass
 
+from flask import Flask, request, jsonify
+import threading
+
+PI_SERVER = Flask(__name__)
+
+@PI_SERVER.route("/api/say", methods=["POST"])
+def api_say():
+    data = request.get_json()
+    text = data.get("text", "")
+    if not text:
+        return jsonify({"status": "error", "msg": "缺少 text"}), 400
+    print(f"[Pi] 播報：{text}")
+    tts_say_blocking(text)
+    return jsonify({"status": "ok"})
+
+@PI_SERVER.route("/api/record", methods=["POST"])
+def api_record():
+    """錄音一段音訊，送回 server /api/fall_reply 判斷"""
+    recorder = PvRecorder(device_index=DEVICE_INDEX, frame_length=512)
+    recorder.start()
+    try:
+        first_frame = recorder.read()
+        frames = record_until_silence(recorder, None, first_frame,
+                                      silence_limit=2.0, max_duration=10)
+        if not frames:
+            return jsonify({"status": "unknown"})
+
+        wav_io = io.BytesIO()
+        with wave.open(wav_io, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)  # ✅ 固定取樣率
+            for block in frames:
+                wf.writeframes(struct.pack("<" + "h"*len(block), *block))
+        wav_io.seek(0)
+
+        files = {"file": ("reply.wav", wav_io, "audio/wav")}
+        resp = requests.post("http://192.168.0.15:5000/api/fall_reply", files=files, timeout=20)
+        if resp.status_code == 200:
+            return jsonify(resp.json())
+        else:
+            return jsonify({"status": "error", "msg": resp.text}), 500
+    finally:
+        recorder.stop()
+        recorder.delete()
+
+
+def run_flask():
+    PI_SERVER.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+
 
 if __name__ == "__main__":
-    main()
+    rtsp_proc = start_rtsp_stream()
+    try:
+        threading.Thread(target=run_flask, daemon=True).start()
+        main()
+    finally:
+        if rtsp_proc:
+            rtsp_proc.terminate()
+            rtsp_proc.wait()
+            print("[RTSP] 已關閉串流服務")
+
+
