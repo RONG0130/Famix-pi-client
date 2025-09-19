@@ -29,7 +29,7 @@ import subprocess
 def start_rtsp_stream():
     cmd = [
         "v4l2rtspserver",
-        "-W", "320", "-H", "240", "-F", "10",
+        "-W", "640", "-H", "480", "-F", "10",
         "/dev/video0"
     ]
     return subprocess.Popen(cmd)
