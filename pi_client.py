@@ -56,7 +56,7 @@ is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
 def capture_and_upload_face():
     """打開攝影機，拍一張照片送到 server"""
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture("rtsp://127.0.0.1:8554/unicast", cv2.CAP_FFMPEG)
     ret, frame = cap.read()
     cap.release()
 
