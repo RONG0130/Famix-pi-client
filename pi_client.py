@@ -43,9 +43,9 @@ SENSITIVITY  = 0.75
 COOLDOWN_SEC = 0.5
 FLUSH_MS     = 300
 
-SERVER_URL   = "http://10.118.7.154:5000/api/audio"
-SERVER_FACE  = "http://10.118.7.154:5000/api/face_recog"
-SERVER_MSG   = "http://10.118.7.154:5000/api/message"
+SERVER_URL   = "http://10.23.222.154:5000/api/audio"
+SERVER_FACE  = "http://10.23.222.154:5000/api/face_recog"
+SERVER_MSG   = "http://10.23.222.154:5000/api/message"
 
 # TTS 設定
 TTS_VOICE    = "zh-TW-YunJheNeural"
