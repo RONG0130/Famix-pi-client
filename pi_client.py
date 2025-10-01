@@ -247,7 +247,7 @@ def upload(frames, sample_rate):
 
 
 # --------- 錄音與流程 ---------
-def record_until_fixed(recorder, sample_rate=16000, duration=10):
+def record_until_fixed(recorder, sample_rate=16000, duration=8):
     """固定錄音 N 秒"""
     frames = []
     total_frames = int(sample_rate / recorder.frame_length * duration)
@@ -313,7 +313,7 @@ def main():
 
                 print("[Recording] 開始錄音…")
                 first_frame = recorder.read()
-                frames = record_until_fixed(recorder, porcupine.sample_rate, duration=10)
+                frames = record_until_fixed(recorder, porcupine.sample_rate, duration=8)
                 if frames:
                     session_ctrl = upload(frames, porcupine.sample_rate)
                     # 檢查是否進入留言模式
@@ -332,7 +332,7 @@ def main():
                 while session_ctrl == "followup":
                     print("[Client] 伺服器要求追問模式，再次錄音")
                     first_frame = recorder.read()
-                    frames = record_until_fixed(recorder, porcupine.sample_rate, duration=10)
+                    frames = record_until_fixed(recorder, porcupine.sample_rate, duration=8)
 
                     if frames:
                         session_ctrl = upload(frames, porcupine.sample_rate)
@@ -384,7 +384,7 @@ def api_record():
     recorder.start()
     try:
         first_frame = recorder.read()
-        frames = record_until_fixed(recorder, sample_rate=16000, duration=10)
+        frames = record_until_fixed(recorder, sample_rate=16000, duration=8)
 
         if not frames:
             return jsonify({"status": "unknown"})
