@@ -247,36 +247,18 @@ def upload(frames, sample_rate):
 
 
 # --------- 錄音與流程 ---------
-def record_until_silence(recorder, porcupine, first_frame,
-                         silence_limit=1.2, frame_duration=20, max_duration=120):
-    frames = [first_frame]
-    silence_start = None
-    max_frames = int((1000 / frame_duration) * max_duration)
+def record_until_fixed(recorder, sample_rate=16000, duration=10):
+    """固定錄音 N 秒"""
+    frames = []
+    total_frames = int(sample_rate / recorder.frame_length * duration)
 
-    for i in range(max_frames):
+    for i in range(total_frames):
         frame = recorder.read()
         frames.append(frame)
 
-        frame_bytes = struct.pack("<" + "h"*len(frame), *frame)
-        rms = audioop.rms(frame_bytes, 2)
-        if rms < 500:
-            if silence_start is None:
-                silence_start = time.time()
-            elif time.time() - silence_start > silence_limit:
-                print("[Client] 偵測到靜音，結束錄音")
-                break
-        else:
-            silence_start = None
-    else:
-        print("[Client] ⚠️ 錄音超過最大長度")
-        tts_say_blocking("Famix錄音系統出現異常，請稍後再試")
-        return None
-    if len(frames) < 5:
-        print("[Client] ⚠️ 錄到的音訊太少，略過")
-        return None
-    
-
+    print(f"[Client] ✅ 固定錄音 {duration} 秒完成")
     return frames
+
 
 def flush_buffer(recorder, porcupine, ms: int):
     frames_to_drop = int((ms / 1000.0) * (porcupine.sample_rate / porcupine.frame_length))
@@ -331,7 +313,7 @@ def main():
 
                 print("[Recording] 開始錄音…")
                 first_frame = recorder.read()
-                frames = record_until_silence(recorder, porcupine, first_frame)
+                frames = record_until_fixed(recorder, porcupine.sample_rate, duration=10)
                 if frames:
                     session_ctrl = upload(frames, porcupine.sample_rate)
                     # 檢查是否進入留言模式
@@ -350,7 +332,8 @@ def main():
                 while session_ctrl == "followup":
                     print("[Client] 伺服器要求追問模式，再次錄音")
                     first_frame = recorder.read()
-                    frames = record_until_silence(recorder, porcupine, first_frame)
+                    frames = record_until_fixed(recorder, porcupine.sample_rate, duration=10)
+
                     if frames:
                         session_ctrl = upload(frames, porcupine.sample_rate)
                     else:
@@ -401,8 +384,8 @@ def api_record():
     recorder.start()
     try:
         first_frame = recorder.read()
-        frames = record_until_silence(recorder, None, first_frame,
-                                      silence_limit=2.0, max_duration=10)
+        frames = record_until_fixed(recorder, sample_rate=16000, duration=10)
+
         if not frames:
             return jsonify({"status": "unknown"})
 
