@@ -10,22 +10,29 @@ import datetime
 import tempfile
 import asyncio
 import audioop 
-import math
-import numpy as np
-import threading
-import requests
-import pygame
-import edge_tts
-import vlc
+
 import pvporcupine
 from pvrecorder import PvRecorder
-from ultralytics import YOLO
-from datetime import datetime
-import speech_recognition as sr
-from flask import Flask, request, jsonify
+
+# === 播放 TTS：edge_tts + pygame ===
+import pygame
+import edge_tts
 # === 上傳用 ===
+import requests
 from pydub import AudioSegment
 
+# === VLC 音樂播放 ===
+import vlc
+#------------------------
+import subprocess
+
+def start_rtsp_stream():
+    cmd = [
+        "v4l2rtspserver",
+        "-W", "480", "-H", "480", "-F", "10",
+        "/dev/video0"
+    ]
+    return subprocess.Popen(cmd)
 
 
 # ========= config =========
@@ -36,16 +43,9 @@ SENSITIVITY  = 0.75
 COOLDOWN_SEC = 0.5
 FLUSH_MS     = 300
 
-
-SERVER_URL   = "http://10.23.222.154:5000/api/audio"
-SERVER_FACE  = "http://10.23.222.154:5000/api/face_recog"
-SERVER_MSG   = "http://10.23.222.154:5000/api/message"
-
-# ========= LINE 推播設定 =========
-LINE_TOKEN = "你的_LINE_TOKEN"
-LINE_TO_ID = "你的_LINE_USER_ID"
-CLOUDINARY_CLOUD_NAME = "dx3ix8qmq"
-CLOUDINARY_UPLOAD_PRESET = "linebot"
+SERVER_URL   = "http://192.168.0.15:5000/api/audio"
+SERVER_FACE  = "http://192.168.0.15:5000/api/face_recog"
+SERVER_MSG   = "http://192.168.0.15:5000/api/message"
 
 # TTS 設定
 TTS_VOICE    = "zh-TW-YunJheNeural"
@@ -54,45 +54,9 @@ TTS_HIT_TEXT = "你好，請問有什麼需要幫助的嗎？"
 TTS_IDLE_TEXT= "Famix已進入待機模式"
 is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
-# ========= LINE 功能 =========
-def line_push_text(msg):
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {"Authorization": f"Bearer {LINE_TOKEN}", "Content-Type": "application/json"}
-    data = {"to": LINE_TO_ID, "messages": [{"type": "text", "text": msg[:5000]}]}
-    try:
-        requests.post(url, headers=headers, json=data, timeout=10)
-    except Exception as e:
-        print("[LINE] 傳送文字失敗:", e)
-
-def line_push_image(path, caption=""):
-    try:
-        with open(path, "rb") as f:
-            files = {"file": f}
-            data = {"upload_preset": CLOUDINARY_UPLOAD_PRESET}
-            r = requests.post(
-                f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload",
-                files=files, data=data, timeout=20
-            )
-        if r.status_code == 200:
-            url = r.json().get("secure_url")
-            msgs = [{"type": "image", "originalContentUrl": url, "previewImageUrl": url}]
-            if caption:
-                msgs.append({"type": "text", "text": caption})
-            requests.post(
-                "https://api.line.me/v2/bot/message/push",
-                headers={"Authorization": f"Bearer {LINE_TOKEN}",
-                         "Content-Type": "application/json"},
-                json={"to": LINE_TO_ID, "messages": msgs}
-            )
-        else:
-            print("[LINE] 上傳失敗:", r.text[:200])
-    except Exception as e:
-        print("[LINE] 圖片推播錯誤:", e)
-
-
 def capture_and_upload_face():
     """打開攝影機，拍一張照片送到 server"""
-    cap = cv2.VideoCapture("rtsp://127.0.0.1:8554/unicast", cv2.CAP_FFMPEG)
+    cap = cv2.VideoCapture(0)
     ret, frame = cap.read()
     cap.release()
 
@@ -283,18 +247,36 @@ def upload(frames, sample_rate):
 
 
 # --------- 錄音與流程 ---------
-def record_until_fixed(recorder, sample_rate=16000, duration=7):
-    """固定錄音 N 秒"""
-    frames = []
-    total_frames = int(sample_rate / recorder.frame_length * duration)
+def record_until_silence(recorder, porcupine, first_frame,
+                         silence_limit=1.2, frame_duration=20, max_duration=120):
+    frames = [first_frame]
+    silence_start = None
+    max_frames = int((1000 / frame_duration) * max_duration)
 
-    for i in range(total_frames):
+    for i in range(max_frames):
         frame = recorder.read()
         frames.append(frame)
 
-    print(f"[Client] ✅ 固定錄音 {duration} 秒完成")
-    return frames
+        frame_bytes = struct.pack("<" + "h"*len(frame), *frame)
+        rms = audioop.rms(frame_bytes, 2)
+        if rms < 500:
+            if silence_start is None:
+                silence_start = time.time()
+            elif time.time() - silence_start > silence_limit:
+                print("[Client] 偵測到靜音，結束錄音")
+                break
+        else:
+            silence_start = None
+    else:
+        print("[Client] ⚠️ 錄音超過最大長度")
+        tts_say_blocking("Famix錄音系統出現異常，請稍後再試")
+        return None
+    if len(frames) < 5:
+        print("[Client] ⚠️ 錄到的音訊太少，略過")
+        return None
+    
 
+    return frames
 
 def flush_buffer(recorder, porcupine, ms: int):
     frames_to_drop = int((ms / 1000.0) * (porcupine.sample_rate / porcupine.frame_length))
@@ -315,7 +297,6 @@ def main():
     )
     recorder = PvRecorder(device_index=DEVICE_INDEX, frame_length=porcupine.frame_length)
     recorder.start()
-    
 
     try:
         recorder.stop()
@@ -350,7 +331,7 @@ def main():
 
                 print("[Recording] 開始錄音…")
                 first_frame = recorder.read()
-                frames = record_until_fixed(recorder, porcupine.sample_rate, duration=7)
+                frames = record_until_silence(recorder, porcupine, first_frame)
                 if frames:
                     session_ctrl = upload(frames, porcupine.sample_rate)
                     # 檢查是否進入留言模式
@@ -369,8 +350,7 @@ def main():
                 while session_ctrl == "followup":
                     print("[Client] 伺服器要求追問模式，再次錄音")
                     first_frame = recorder.read()
-                    frames = record_until_fixed(recorder, porcupine.sample_rate, duration=7)
-
+                    frames = record_until_silence(recorder, porcupine, first_frame)
                     if frames:
                         session_ctrl = upload(frames, porcupine.sample_rate)
                     else:
@@ -421,8 +401,8 @@ def api_record():
     recorder.start()
     try:
         first_frame = recorder.read()
-        frames = record_until_fixed(recorder, sample_rate=16000, duration=7)
-
+        frames = record_until_silence(recorder, None, first_frame,
+                                      silence_limit=2.0, max_duration=10)
         if not frames:
             return jsonify({"status": "unknown"})
 
@@ -449,78 +429,14 @@ def api_record():
 def run_flask():
     PI_SERVER.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
 
-# ========= 跌倒偵測功能 =========
-def fall_detection_loop():
-    print("[Fall] 啟動跌倒偵測中...")
-    model = YOLO("yolov8n-pose.pt")
-    cap = cv2.VideoCapture(0)
-    last_alert = 0
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.5)
-            continue
-
-        results = model.predict(frame, conf=0.3, iou=0.45, verbose=False)
-        res = results[0]
-        if res.keypoints is None:
-            continue
-
-        boxes = res.boxes.xyxy.cpu().numpy()
-        kps = res.keypoints.xy.cpu().numpy()
-
-        for i in range(len(boxes)):
-            x1, y1, x2, y2 = boxes[i]
-            bh = y2 - y1
-            if bh < 80:
-                continue
-
-            SH_L, SH_R, HP_L, HP_R = 5, 6, 11, 12
-            shoulder = ((kps[i][SH_L][0] + kps[i][SH_R][0]) / 2,
-                        (kps[i][SH_L][1] + kps[i][SH_R][1]) / 2)
-            hip = ((kps[i][HP_L][0] + kps[i][HP_R][0]) / 2,
-                   (kps[i][HP_L][1] + kps[i][HP_R][1]) / 2)
-
-            vec = np.array([shoulder[0]-hip[0], shoulder[1]-hip[1]], dtype=np.float32)
-            vec /= np.linalg.norm(vec) + 1e-6
-            angle = math.degrees(math.acos(np.clip(np.dot(vec, [0, -1]), -1, 1)))
-
-            if angle > 70 and (time.time() - last_alert) > 30:
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                path = f"/tmp/fall_{ts}.jpg"
-                cv2.imwrite(path, frame)
-                print(f"[Fall] 偵測到跌倒 (角度={angle:.1f})")
-                tts_say_blocking("感知到有人跌倒，您是否需要通知他人？")
-
-                r = sr.Recognizer()
-                try:
-                    with sr.Microphone() as source:
-                        print("[Fall] 等待語音回覆...")
-                        audio = r.listen(source, timeout=6, phrase_time_limit=6)
-                    text = r.recognize_google(audio, language="zh-TW")
-                    print("[Fall] 回覆內容:", text)
-                except Exception:
-                    text = ""
-
-                if any(k in text for k in ["是", "要", "幫忙", "救命", "yes", "ok"]):
-                    print("[Fall] 回覆需要協助 → 傳送 LINE 通知")
-                    line_push_text("⚠️ Famix 偵測到跌倒且需要協助！")
-                    line_push_image(path, caption="Famix 偵測到跌倒事件")
-                else:
-                    print("[Fall] 無回應，等待 60 秒後自動通報")
-                    time.sleep(60)
-                    line_push_text("⚠️ Famix 偵測到跌倒，未收到回覆，自動通報！")
-                    line_push_image(path, caption="Famix 偵測到跌倒事件")
-
-                last_alert = time.time()
-        time.sleep(0.5)
-
-
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    threading.Thread(target=fall_detection_loop, daemon=True).start()
-    main()
-
-
+    rtsp_proc = start_rtsp_stream()
+    try:
+        threading.Thread(target=run_flask, daemon=True).start()
+        main()
+    finally:
+        if rtsp_proc:
+            rtsp_proc.terminate()
+            rtsp_proc.wait()
+            print("[RTSP] 已關閉串流服務")
