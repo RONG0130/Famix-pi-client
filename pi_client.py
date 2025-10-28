@@ -249,34 +249,25 @@ def upload(frames, sample_rate):
 # --------- 錄音與流程 ---------
 def record_until_silence(recorder, porcupine, first_frame,
                          silence_limit=1.2, frame_duration=20, max_duration=120):
+    """
+    改版：固定錄 6 秒，不再使用靜音偵測。
+    """
     frames = [first_frame]
-    silence_start = None
-    max_frames = int((1000 / frame_duration) * max_duration)
+    duration = 6  # 錄音長度（秒）
+    sample_rate = 16000  # PvRecorder 輸出取樣率
+    total_frames = int(sample_rate / (512 / (sample_rate / 1000)) * duration / 1000)
 
-    for i in range(max_frames):
+    print(f"[Client] 🎙️ 固定錄音 {duration} 秒中...")
+    start_time = time.time()
+
+    for _ in range(int(duration * (1000 / frame_duration))):
         frame = recorder.read()
         frames.append(frame)
+        if time.time() - start_time > duration:
+            break
 
-        frame_bytes = struct.pack("<" + "h"*len(frame), *frame)
-        rms = audioop.rms(frame_bytes, 2)
-        if rms < 500:
-            if silence_start is None:
-                silence_start = time.time()
-            elif time.time() - silence_start > silence_limit:
-                print("[Client] 偵測到靜音，結束錄音")
-                break
-        else:
-            silence_start = None
-    else:
-        print("[Client] ⚠️ 錄音超過最大長度")
-        tts_say_blocking("Famix錄音系統出現異常，請稍後再試")
-        return None
-    if len(frames) < 5:
-        print("[Client] ⚠️ 錄到的音訊太少，略過")
-        return None
-    
-
-    return frames
+    print("[Client] ⏹ 錄音結束")
+    return frames if len(frames) > 5 else None
 
 def flush_buffer(recorder, porcupine, ms: int):
     frames_to_drop = int((ms / 1000.0) * (porcupine.sample_rate / porcupine.frame_length))
