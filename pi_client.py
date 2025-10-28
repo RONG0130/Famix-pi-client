@@ -420,7 +420,7 @@ def api_record():
         wav_io.seek(0)
 
         files = {"file": ("reply.wav", wav_io, "audio/wav")}
-        resp = requests.post("http://192.168.0.15:5000/api/fall_reply", files=files, timeout=60)
+        resp = requests.post("http://192.168.0.20:5000/api/fall_reply", files=files, timeout=60)
         if resp.status_code == 200:
             jr = resp.json()
             print("[Pi] ✅ 收到伺服器辨識結果:", jr)
