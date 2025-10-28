@@ -398,10 +398,18 @@ def api_say():
 
 @PI_SERVER.route("/api/record", methods=["POST"])
 def api_record():
-    """錄音一段音訊後，送回伺服器 /api/fall_reply 判斷"""
+    global is_playing_tts
     print("[Pi] /api/record 啟動錄音...")
+
+    # 🔹 若還在播 TTS，就延遲幾秒再錄
+    if is_playing_tts:
+        print("[Pi] ⚠️ 正在播放TTS，暫緩錄音3秒")
+        time.sleep(3)
+
     recorder = PvRecorder(device_index=DEVICE_INDEX, frame_length=512)
     recorder.start()
+    flush_buffer(recorder, None, 300)  # 清除舊聲音
+
     try:
         first_frame = recorder.read()
         frames = record_until_silence(recorder, None, first_frame,
@@ -420,7 +428,12 @@ def api_record():
         wav_io.seek(0)
 
         files = {"file": ("reply.wav", wav_io, "audio/wav")}
-        resp = requests.post("http://192.168.0.20:5000/api/fall_reply", files=files, timeout=60)
+        server_url = "http://192.168.0.20:5000/api/fall_reply"  # 換成實際IP
+        print(f"[Pi] 傳送錄音檔到 {server_url} ...")
+        resp = requests.post(server_url, files=files, timeout=60)
+        print(f"[Pi] 回應碼: {resp.status_code}")
+        print(f"[Pi] 回應內容: {resp.text[:200]}")
+
         if resp.status_code == 200:
             jr = resp.json()
             print("[Pi] ✅ 收到伺服器辨識結果:", jr)
