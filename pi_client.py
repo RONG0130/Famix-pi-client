@@ -399,7 +399,14 @@ def api_say():
 @PI_SERVER.route("/api/record", methods=["POST"])
 def api_record():
     """錄音一段音訊後，送回伺服器 /api/fall_reply 判斷"""
+    global is_playing_tts
     print("[Pi] /api/record 啟動錄音...")
+
+    # ✅ 若正在播放TTS，就暫緩錄音
+    if is_playing_tts:
+        print("[Pi] ⚠️ 正在播放TTS，暫緩錄音3秒")
+        time.sleep(3)
+
     recorder = PvRecorder(device_index=DEVICE_INDEX, frame_length=512)
     recorder.start()
     try:
@@ -434,6 +441,7 @@ def api_record():
     finally:
         recorder.stop()
         recorder.delete()
+
 
 def run_flask():
     PI_SERVER.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
