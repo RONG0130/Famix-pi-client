@@ -391,12 +391,15 @@ def api_say():
     if not text:
         return jsonify({"status": "error", "msg": "缺少 text"}), 400
     print(f"[Pi] 播報：{text}")
-    tts_say_blocking(text)
-    return jsonify({"status": "ok"})
+
+    # ✅ 改成背景執行播放，立刻回傳成功
+    threading.Thread(target=tts_say_blocking, args=(text,), daemon=True).start()
+    return jsonify({"status": "ok", "msg": "語音播放中"})
 
 @PI_SERVER.route("/api/record", methods=["POST"])
 def api_record():
-    """錄音一段音訊，送回 server /api/fall_reply 判斷"""
+    """錄音一段音訊後，送回伺服器 /api/fall_reply 判斷"""
+    print("[Pi] /api/record 啟動錄音...")
     recorder = PvRecorder(device_index=DEVICE_INDEX, frame_length=512)
     recorder.start()
     try:
@@ -404,27 +407,33 @@ def api_record():
         frames = record_until_silence(recorder, None, first_frame,
                                       silence_limit=2.0, max_duration=10)
         if not frames:
+            print("[Pi] ❌ 錄音失敗或靜音")
             return jsonify({"status": "unknown"})
 
         wav_io = io.BytesIO()
         with wave.open(wav_io, 'wb') as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
-            wf.setframerate(16000)  # ✅ 固定取樣率
+            wf.setframerate(16000)
             for block in frames:
                 wf.writeframes(struct.pack("<" + "h"*len(block), *block))
         wav_io.seek(0)
 
         files = {"file": ("reply.wav", wav_io, "audio/wav")}
-        resp = requests.post("http://192.168.0.15:5000/api/fall_reply", files=files, timeout=20)
+        resp = requests.post("http://192.168.0.15:5000/api/fall_reply", files=files, timeout=60)
         if resp.status_code == 200:
-            return jsonify(resp.json())
+            jr = resp.json()
+            print("[Pi] ✅ 收到伺服器辨識結果:", jr)
+            return jsonify(jr)
         else:
+            print("[Pi] ⚠️ 上傳失敗:", resp.status_code, resp.text)
             return jsonify({"status": "error", "msg": resp.text}), 500
+    except Exception as e:
+        print("[Pi] record error:", e)
+        return jsonify({"status": "error", "msg": str(e)})
     finally:
         recorder.stop()
         recorder.delete()
-
 
 def run_flask():
     PI_SERVER.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
