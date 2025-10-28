@@ -55,13 +55,14 @@ TTS_IDLE_TEXT= "Famix已進入待機模式"
 is_playing_tts = False   # ✅ 播放 TTS 時暫停錄音
 
 def capture_and_upload_face():
-    """打開攝影機，拍一張照片送到 server"""
-    cap = cv2.VideoCapture(0)
+    """從 RTSP 串流擷取一張影像並上傳到 server"""
+    RTSP_URL = "rtsp://127.0.0.1:8554/unicast"  # Pi 本機的串流來源
+    cap = cv2.VideoCapture(RTSP_URL)
     ret, frame = cap.read()
     cap.release()
 
     if not ret:
-        print("[Client] 拍照失敗")
+        print("[Client] ❌ 無法從 RTSP 取得影像")
         return None
 
     tmp_path = f"/tmp/face_{timestamp()}.jpg"
@@ -70,26 +71,13 @@ def capture_and_upload_face():
     try:
         with open(tmp_path, "rb") as f:
             files = {"file": (os.path.basename(tmp_path), f, "image/jpeg")}
-            resp = requests.post(SERVER_FACE, files=files)
-        
-            print(f"[Client] Server 回覆狀態碼: {resp.status_code}")
-            print(f"[Client] Server 回覆原始內容: {resp.text[:200]}")  # 印前 200 字
-        
-            ctype = resp.headers.get("Content-Type", "")
-            if "application/json" in ctype:
-                return resp.json()
-            else:
-                print("[Client] Server 回傳不是 JSON，內容前200字:", resp.text[:200])
-                return None
+            resp = requests.post(SERVER_FACE, files=files, timeout=10)
 
+        print(f"[Client] Server 回覆狀態碼: {resp.status_code}")
         if resp.status_code == 200:
-            try:
-                return resp.json()
-            except Exception as e:
-                print(f"[Client] JSON 解析失敗: {e}")
-                return None
+            return resp.json()
         else:
-            print(f"[Client] 人臉上傳失敗 {resp.status_code}")
+            print(f"[Client] 上傳失敗: {resp.text}")
             return None
     finally:
         if os.path.exists(tmp_path):
