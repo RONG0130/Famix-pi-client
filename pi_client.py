@@ -369,11 +369,17 @@ def api_say():
     text = data.get("text", "")
     if not text:
         return jsonify({"status": "error", "msg": "缺少 text"}), 400
-    print(f"[Pi] 播報：{text}")
 
-    # ✅ 改成背景執行播放，立刻回傳成功
-    threading.Thread(target=tts_say_blocking, args=(text,), daemon=True).start()
-    return jsonify({"status": "ok", "msg": "語音播放中"})
+    print(f"[Pi] ▶️ 播報中：{text}")
+    try:
+        # ✅ 直接阻塞式播放（edge-tts 完成後才回傳）
+        tts_say_blocking(text)
+        print("[Pi] ✅ 播放完成")
+        return jsonify({"status": "ok", "msg": "播放完成"})
+    except Exception as e:
+        print(f"[Pi] ❌ 播放失敗：{e}")
+        return jsonify({"status": "error", "msg": str(e)}), 500
+
 
 @PI_SERVER.route("/api/record", methods=["POST"])
 def api_record():
